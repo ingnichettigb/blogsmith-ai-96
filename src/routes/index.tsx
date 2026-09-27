@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History } from "lucide-react";
+import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,7 +9,7 @@ import { ProductsPanel } from "@/components/ProductsPanel";
 import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { StoreProvider, useStore, type State } from "@/lib/store";
-import { generateBackupFilename, saveBackup, restoreBackup, getBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
+import { generateBackupFilename, saveBackup, restoreBackup, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -81,19 +81,46 @@ function SaveRestoreControls() {
             <History />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-80">
-          <p className="mb-2 font-bold">Cronologia salvataggi</p>
+        <PopoverContent align="end" className="w-96">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="font-bold">Cronologia salvataggi</p>
+            {history.length > 0 && (
+              <button
+                className="text-sm font-semibold text-destructive underline underline-offset-2"
+                onClick={() => { setHistory(clearBackupHistory()); toast.success("Cronologia svuotata"); }}
+              >
+                Svuota tutto
+              </button>
+            )}
+          </div>
           {history.length === 0 ? (
             <p className="text-muted-foreground">Nessun salvataggio ancora effettuato.</p>
           ) : (
-            <ul className="max-h-64 space-y-1 overflow-auto text-sm">
-              {history.map((h) => (
-                <li key={h.savedAt} className="flex flex-col border-b py-1 last:border-0">
-                  <span className="font-mono">{h.filename}</span>
-                  <span className="text-muted-foreground">{formatHistoryDate(h.savedAt)}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto_2rem] gap-2 border-b pb-1 text-sm font-bold text-muted-foreground">
+                <span>File</span>
+                <span>Data</span>
+                <span className="sr-only">Elimina</span>
+              </div>
+              <ul className="max-h-64 space-y-1 overflow-auto text-sm">
+                {history.map((h) => (
+                  <li key={h.savedAt} className="grid grid-cols-[minmax(0,1fr)_auto_2rem] items-center gap-2 border-b py-1.5 last:border-0">
+                    <span className="truncate font-mono" title={h.filename}>{h.filename}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatHistoryDate(h.savedAt)}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Rimuovi dalla cronologia ${h.filename}`}
+                      onClick={() => setHistory(removeBackupHistoryEntry(h.savedAt))}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-muted-foreground">Rimuove solo la voce dall'elenco: non cancella il file già salvato sul tuo dispositivo.</p>
+            </>
           )}
         </PopoverContent>
       </Popover>

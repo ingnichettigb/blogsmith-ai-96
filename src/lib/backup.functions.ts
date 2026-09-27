@@ -31,6 +31,32 @@ function addBackupHistoryEntry(filename: string): BackupHistoryEntry[] {
   return history;
 }
 
+/**
+ * Rimuove una singola voce dalla cronologia (identificata dal timestamp,
+ * unico per ogni salvataggio). Rimuove solo il promemoria elencato qui:
+ * non tocca né il file già scaricato/salvato sul disco dell'utente, né i
+ * dati dell'articolo/prodotti correnti.
+ */
+export function removeBackupHistoryEntry(savedAt: string): BackupHistoryEntry[] {
+  const history = getBackupHistory().filter((h) => h.savedAt !== savedAt);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    /* ignore */
+  }
+  return history;
+}
+
+/** Svuota completamente la cronologia dei salvataggi. */
+export function clearBackupHistory(): BackupHistoryEntry[] {
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
 // -- Nome file: AAAAMMGGHHmmBLOG-<primi 20 caratteri del titolo, o "NoTitle">.json --
 
 // Caratteri non ammessi nei nomi file su Windows/macOS/Linux: vengono solo rimossi,
