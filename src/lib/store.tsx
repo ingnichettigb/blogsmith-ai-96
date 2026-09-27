@@ -33,6 +33,8 @@ export type Article = {
   date: string;
   referenceUrl: string;
   referenceImages: boolean;
+  /** Bozza già scritta dall'utente, usata come base per la generazione AI. */
+  draftText: string;
 };
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
@@ -53,7 +55,7 @@ export const countWords = (s: string) =>
 
 /** Articolo vuoto ("foglio bianco"): usato sia per lo stato iniziale sia dal pulsante "Azzera tutto". */
 export function createBlankArticle(): Article {
-  return { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false };
+  return { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false, draftText: "" };
 }
 
 const initial: State = {

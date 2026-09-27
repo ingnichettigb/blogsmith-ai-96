@@ -73,13 +73,16 @@ export function ArticlePanel() {
           toast.warning(`Pagina di riferimento non letta: ${e instanceof Error ? e.message : "errore"}. Procedo senza.`);
         }
       }
-      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone, referenceText } });
+      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone, referenceText, draftText: art.draftText || "" } });
       const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
       const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
       const slug = art.slug || slugify(art.title);
       const useRefImages = art.referenceImages && referenceImages.length > 0;
+      // La prima immagine reale (se c'è) va alla copertina; le successive alle figure, nell'ordine.
+      // Quando le immagini reali finiscono, il resto viene "inventato" con foto stock invece di ripetere le stesse.
+      const figImages = useRefImages ? referenceImages.slice(1) : [];
       const figures: Figure[] = Array.from({ length: n }, (_, i) =>
-        art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: (useRefImages ? referenceImages[i % referenceImages.length] : undefined) ?? stock(`${slug}-${i + 1}`) },
+        art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: figImages[i] ?? stock(`${slug}-${i + 1}`) },
       );
       const cover = art.cover || (useRefImages ? referenceImages[0] : undefined) || stock(slug);
       upd({ markdown: r.markdown, excerpt: r.excerpt, slug, figures, cover, date: new Date().toISOString().slice(0, 10) });
@@ -141,6 +144,11 @@ export function ArticlePanel() {
           <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
             {["professionale", "amichevole", "tecnico", "persuasivo", "giornalistico"].map((t) => <option key={t}>{t}</option>)}
           </select>
+        </div>
+        <div className="space-y-2 border-t-2 pt-4">
+          <label htmlFor="draft" className="mb-1 block font-bold">Bozza già scritta (facoltativo)</label>
+          <p className="text-muted-foreground">Incolla qui un testo che hai già preparato: verrà usato come base, riscritto e completato dall'AI fino a raggiungere la lunghezza minima richiesta, mantenendo i contenuti che contiene.</p>
+          <Textarea id="draft" value={art.draftText || ""} onChange={(e) => upd({ draftText: e.target.value })} placeholder="Incolla qui la tua bozza…" className="min-h-40 border-2 text-lg" />
         </div>
         <div className="space-y-2 border-t-2 pt-4">
           <label htmlFor="refurl" className="flex items-center gap-2 font-bold"><Link2 className="size-5" /> Link di riferimento (facoltativo)</label>
