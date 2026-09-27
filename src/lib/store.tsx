@@ -51,6 +51,11 @@ export const slugify = (s: string) =>
 export const countWords = (s: string) =>
   s.replace(/\[\[FIGURA:[^\]]*\]\]/g, " ").replace(/[#*_>`\-]/g, " ").split(/\s+/).filter((w) => /\p{L}|\d/u.test(w)).length;
 
+/** Articolo vuoto ("foglio bianco"): usato sia per lo stato iniziale sia dal pulsante "Azzera tutto". */
+export function createBlankArticle(): Article {
+  return { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false };
+}
+
 const initial: State = {
   analysis: null,
   products: [
@@ -65,7 +70,7 @@ const initial: State = {
   ],
   sponsoredLinks: [],
   rotation: { mode: "sequential", intervalSec: 8 },
-  article: { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false },
+  article: createBlankArticle(),
 };
 
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);

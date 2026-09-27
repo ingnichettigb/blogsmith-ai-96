@@ -1,13 +1,24 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2 } from "lucide-react";
+import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { generateArticle, suggestTopics } from "@/lib/ai.functions";
 import { fetchReferencePage } from "@/lib/reference.functions";
-import { countWords, slugify, useStore, type Figure } from "@/lib/store";
+import { countWords, createBlankArticle, slugify, useStore, type Figure } from "@/lib/store";
 import { fileToDataUrl } from "./ProductsPanel";
 
 const PRESETS = [800, 1500, 2500];
@@ -27,6 +38,16 @@ export function ArticlePanel() {
   const fetchRef = useServerFn(fetchReferencePage);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
+  const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && art.figures.length === 0;
+
+  const doReset = () => {
+    upd(createBlankArticle());
+    setNiche("");
+    setIdeas([]);
+    setTone("professionale");
+    setFigCount(2);
+    toast.success("Articolo azzerato: pronto per uno nuovo");
+  };
 
   const doIdeas = async () => {
     setBusy("ideas");
@@ -70,6 +91,28 @@ export function ArticlePanel() {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="lg" className="h-12 border-2 text-lg font-bold" disabled={isBlank}>
+              <Eraser /> Azzera tutto
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Azzerare l'articolo corrente?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Titolo, testo, copertina e figure verranno cancellati per iniziare un articolo nuovo da zero. L'analisi del sito e i prodotti sponsorizzati non vengono toccati. Se non hai ancora salvato, l'articolo attuale andrà perso.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annulla</AlertDialogCancel>
+              <AlertDialogAction onClick={doReset}>Azzera tutto</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="text-2xl font-extrabold">1. Argomento e titolo</h2>
         <div>
