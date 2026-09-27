@@ -1,5 +1,3 @@
-import { slugify } from "./store";
-
 /**
  * Backup / ripristino manuale dello stato dell'app (analisi, prodotti, articolo).
  * Non esiste un backend: lo stato vive già in localStorage e viene salvato
@@ -33,14 +31,20 @@ function addBackupHistoryEntry(filename: string): BackupHistoryEntry[] {
   return history;
 }
 
-// -- Nome file: AAAAMMGGHHmm-<primi 20 caratteri del titolo>.json ----------
+// -- Nome file: AAAAMMGGHHmmBLOG-<primi 20 caratteri del titolo, o "NoTitle">.json --
+
+// Caratteri non ammessi nei nomi file su Windows/macOS/Linux: vengono solo rimossi,
+// tutto il resto del titolo (spazi, accenti, punteggiatura) resta invariato.
+const FS_FORBIDDEN_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
 
 export function generateBackupFilename(title: string): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
-  const clean = slugify(title || "").slice(0, 20) || "senza-titolo";
-  return `${ts}-${clean}.json`;
+  const first20 = (title || "").trim().slice(0, 20);
+  const safeTitle = first20.replace(FS_FORBIDDEN_CHARS, "").trim();
+  const namePart = safeTitle.length > 0 ? safeTitle : "NoTitle";
+  return `${ts}BLOG-${namePart}.json`;
 }
 
 // -- Salvataggio: "Salva con nome" se il browser lo supporta, altrimenti download --
