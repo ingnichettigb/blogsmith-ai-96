@@ -8,6 +8,16 @@ export type Product = {
   badge: string;
   link: string;
   image: string;
+  /** Se presente, indica che la carta è stata estratta automaticamente da un SponsoredLink e viene sostituita ad ogni "Aggiorna". */
+  sourceLinkId?: string;
+};
+
+export type SponsoredLink = {
+  id: string;
+  url: string;
+  lastSyncedAt?: string;
+  cardCount?: number;
+  error?: string;
 };
 
 export type Figure = { id: string; caption: string; src: string };
@@ -30,6 +40,7 @@ export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
 export type State = {
   analysis: SiteAnalysis | null;
   products: Product[];
+  sponsoredLinks: SponsoredLink[];
   rotation: Rotation;
   article: Article;
 };
@@ -52,6 +63,7 @@ const initial: State = {
       image: "https://picsum.photos/seed/seo/400/300",
     },
   ],
+  sponsoredLinks: [],
   rotation: { mode: "sequential", intervalSec: 8 },
   article: { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false },
 };
