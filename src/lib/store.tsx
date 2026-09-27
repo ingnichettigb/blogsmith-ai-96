@@ -25,7 +25,7 @@ export type Article = {
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
 
-type State = {
+export type State = {
   analysis: SiteAnalysis | null;
   products: Product[];
   rotation: Rotation;
