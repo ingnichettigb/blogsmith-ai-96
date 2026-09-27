@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { decodeHtmlEntities } from "./utils";
 
 /**
  * Legge una pagina web indicata dall'utente (es. la pagina "Applicazioni" del suo
@@ -24,18 +25,8 @@ function abs(base: string, href: string) {
   }
 }
 
-function decode(s: string) {
-  return s
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
-
 function textOf(fragment: string) {
-  return decode(fragment.replace(/<[^>]+>/g, " "))
+  return decodeHtmlEntities(fragment.replace(/<[^>]+>/g, " "))
     .replace(/\s+/g, " ")
     .trim();
 }

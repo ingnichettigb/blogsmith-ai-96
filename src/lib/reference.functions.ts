@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { decodeHtmlEntities } from "./utils";
 
 /**
  * Legge una pagina web indicata dall'utente (es. la sua landing page) per usarla
@@ -28,14 +29,8 @@ function extractText(html: string): string {
     .replace(/<(nav|header|footer)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<\/(p|div|li|h[1-6]|br|section|article)>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-  return stripped
+    .replace(/<[^>]+>/g, " ");
+  return decodeHtmlEntities(stripped)
     .split("\n")
     .map((l) => l.replace(/\s+/g, " ").trim())
     .filter(Boolean)
