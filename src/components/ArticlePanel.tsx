@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle } from "lucide-react";
+import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { generateArticle, suggestTopics } from "@/lib/ai.functions";
+import { fetchReferencePage } from "@/lib/reference.functions";
 import { countWords, slugify, useStore, type Figure } from "@/lib/store";
 import { fileToDataUrl } from "./ProductsPanel";
 
@@ -23,6 +24,7 @@ export function ArticlePanel() {
   const [busy, setBusy] = useState<"" | "ideas" | "gen">("");
   const suggest = useServerFn(suggestTopics);
   const gen = useServerFn(generateArticle);
+  const fetchRef = useServerFn(fetchReferencePage);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
 
@@ -37,12 +39,29 @@ export function ArticlePanel() {
     if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
     setBusy("gen");
     try {
-      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone } });
+      let referenceText = "";
+      let referenceImages: string[] = [];
+      const refUrl = (art.referenceUrl || "").trim();
+      if (refUrl) {
+        try {
+          const ref = await fetchRef({ data: { url: refUrl } });
+          referenceText = ref.text;
+          referenceImages = ref.images;
+          if (art.referenceImages && referenceImages.length === 0) toast.warning("Nessuna immagine trovata nella pagina di riferimento");
+        } catch (e) {
+          toast.warning(`Pagina di riferimento non letta: ${e instanceof Error ? e.message : "errore"}. Procedo senza.`);
+        }
+      }
+      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone, referenceText } });
       const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
       const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
       const slug = art.slug || slugify(art.title);
-      const figures: Figure[] = Array.from({ length: n }, (_, i) => art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: stock(`${slug}-${i + 1}`) });
-      upd({ markdown: r.markdown, excerpt: r.excerpt, slug, figures, cover: art.cover || stock(slug), date: new Date().toISOString().slice(0, 10) });
+      const useRefImages = art.referenceImages && referenceImages.length > 0;
+      const figures: Figure[] = Array.from({ length: n }, (_, i) =>
+        art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: (useRefImages ? referenceImages[i % referenceImages.length] : undefined) ?? stock(`${slug}-${i + 1}`) },
+      );
+      const cover = art.cover || (useRefImages ? referenceImages[0] : undefined) || stock(slug);
+      upd({ markdown: r.markdown, excerpt: r.excerpt, slug, figures, cover, date: new Date().toISOString().slice(0, 10) });
       const w = countWords(r.markdown);
       toast[w >= art.minWords ? "success" : "warning"](`Articolo generato: ${w} parole`);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
@@ -79,6 +98,15 @@ export function ArticlePanel() {
           <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
             {["professionale", "amichevole", "tecnico", "persuasivo", "giornalistico"].map((t) => <option key={t}>{t}</option>)}
           </select>
+        </div>
+        <div className="space-y-2 border-t-2 pt-4">
+          <label htmlFor="refurl" className="flex items-center gap-2 font-bold"><Link2 className="size-5" /> Link di riferimento (facoltativo)</label>
+          <p className="text-muted-foreground">Incolla il link di una pagina che tratta già l'argomento (es. la tua landing page): l'AI la userà come spunto, riscrivendo tutto con parole proprie.</p>
+          <Input id="refurl" type="url" value={art.referenceUrl || ""} onChange={(e) => upd({ referenceUrl: e.target.value })} placeholder="https://tuosito.it/pagina-landing" className="h-12 border-2 text-lg" />
+          <label className="flex items-center gap-2 font-semibold">
+            <input type="checkbox" checked={!!art.referenceImages} onChange={(e) => upd({ referenceImages: e.target.checked })} className="size-5" />
+            Usa anche le immagini trovate in quella pagina (invece delle foto stock)
+          </label>
         </div>
       </section>
 

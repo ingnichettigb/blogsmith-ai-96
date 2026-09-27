@@ -21,6 +21,8 @@ export type Article = {
   figures: Figure[];
   minWords: number;
   date: string;
+  referenceUrl: string;
+  referenceImages: boolean;
 };
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
@@ -51,7 +53,7 @@ const initial: State = {
     },
   ],
   rotation: { mode: "sequential", intervalSec: 8 },
-  article: { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10) },
+  article: { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false },
 };
 
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
