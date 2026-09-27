@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { Download, FileJson, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EditableImage } from "./EditableImage";
 import { Markdown } from "./Markdown";
 import { countWords, useStore, type Article, type Product, type Rotation } from "@/lib/store";
 
@@ -50,8 +51,9 @@ const INSTRUCTIONS = (slug: string) => `# Installazione rapida
 `;
 
 export function PreviewPanel() {
-  const { state } = useStore();
+  const { state, set } = useStore();
   const a = state.article;
+  const upd = (p: Partial<Article>) => set({ article: { ...a, ...p } });
   const [view, setView] = useState<"list" | "single">("single");
   const words = countWords(a.markdown);
 
@@ -107,7 +109,14 @@ export function PreviewPanel() {
             <h1 className="mb-6 text-4xl font-extrabold">Blog</h1>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               <article className="overflow-hidden rounded-xl border-2 bg-card">
-                {a.cover && <img src={a.cover} alt="" className="aspect-video w-full object-cover" />}
+                <EditableImage
+                  src={a.cover}
+                  alt=""
+                  label="copertina"
+                  className="aspect-video w-full"
+                  placeholder={<div className="grid size-full place-items-center bg-muted text-muted-foreground">Nessuna copertina</div>}
+                  onReplace={(src) => upd({ cover: src })}
+                />
                 <div className="p-4">
                   <time className="text-muted-foreground">{a.date}</time>
                   <h2 className="mt-1 text-xl font-bold">{a.title}</h2>
@@ -120,10 +129,17 @@ export function PreviewPanel() {
         ) : (
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
             <article className="min-w-0">
-              {a.cover && <img src={a.cover} alt="" className="aspect-video w-full rounded-xl border-2 object-cover" />}
+              <EditableImage
+                src={a.cover}
+                alt=""
+                label="copertina"
+                className="aspect-video w-full rounded-xl border-2"
+                placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted text-muted-foreground">Nessuna copertina</div>}
+                onReplace={(src) => upd({ cover: src })}
+              />
               <h1 className="mt-6 text-3xl font-extrabold sm:text-4xl">{a.title}</h1>
               <time className="text-muted-foreground">{a.date}</time>
-              <Markdown md={a.markdown} figures={a.figures} />
+              <Markdown md={a.markdown} figures={a.figures} onReplaceFigure={(id, src) => upd({ figures: a.figures.map((f) => (f.id === id ? { ...f, src } : f)) })} />
             </article>
             <aside className="lg:sticky lg:top-40 lg:self-start">
               <SponsoredSidebar products={state.products} rotation={state.rotation} />
