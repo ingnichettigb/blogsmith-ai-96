@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Plus, Trash2, Pencil, RefreshCw, Link2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +25,19 @@ export function ProductsPanel() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [replacingId, setReplacingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const syncCards = useServerFn(fetchSponsoredCards);
+
+  const onThumbnailFile = async (file?: File) => {
+    const id = replacingId;
+    setReplacingId(null);
+    if (!id || !file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Seleziona un file immagine"); return; }
+    const src = await fileToDataUrl(file);
+    set({ products: state.products.map((p) => (p.id === id ? { ...p, image: src } : p)) });
+    toast.success("Immagine sostituita");
+  };
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +170,20 @@ export function ProductsPanel() {
       <ul className="grid gap-4 sm:grid-cols-2">
         {state.products.map((p) => (
           <li key={p.id} className="flex gap-4 rounded-xl border-2 bg-card p-4">
-            {p.image && <img src={p.image} alt="" className="h-20 w-20 shrink-0 rounded-lg border-2 object-cover" />}
+            {p.image && (
+              <button
+                type="button"
+                className="group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2"
+                onDoubleClick={() => { setReplacingId(p.id); fileInputRef.current?.click(); }}
+                aria-label={`Sostituisci l'immagine di ${p.title}, doppio click`}
+                title="Doppio click per sostituire l'immagine"
+              >
+                <img src={p.image} alt="" className="size-full object-cover" />
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+                  <Pencil className="size-5 text-white" />
+                </span>
+              </button>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 {p.badge && <span className="rounded bg-accent px-2 py-0.5 text-sm font-bold text-accent-foreground">{p.badge}</span>}
@@ -174,6 +199,13 @@ export function ProductsPanel() {
           </li>
         ))}
       </ul>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => { onThumbnailFile(e.target.files?.[0]); e.target.value = ""; }}
+      />
     </div>
   );
 }
