@@ -56,7 +56,7 @@ export function PreviewPanel() {
   const words = countWords(a.markdown);
 
   const exportZip = async () => {
-    if (!a.markdown) return toast.error("Genera prima un articolo");
+    if (!a.markdown) { toast.error("Genera prima un articolo"); return; }
     const zip = new JSZip();
     const dir = zip.folder(`public/blog/${a.slug}`)!;
     let coverExt = "webp";
@@ -64,7 +64,7 @@ export function PreviewPanel() {
     let md = a.markdown;
     const figMeta: { src: string; caption: string }[] = [];
     for (let i = 0; i < a.figures.length; i++) {
-      const f = a.figures[i];
+      const f = a.figures[i]!;
       const b = await toBlob(f.src);
       const name = `figura-${i + 1}.${b?.ext ?? "jpg"}`;
       if (b) dir.file(name, b.blob);

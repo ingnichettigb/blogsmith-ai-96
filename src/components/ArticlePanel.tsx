@@ -28,13 +28,13 @@ export function ArticlePanel() {
 
   const doIdeas = async () => {
     setBusy("ideas");
-    try { setIdeas(await suggest({ data: { niche: niche || art.title, site: state.analysis?.title } })); }
+    try { setIdeas(await suggest({ data: { niche: niche || art.title, site: state.analysis?.title ?? "" } })); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
     finally { setBusy(""); }
   };
 
   const doGen = async () => {
-    if (!art.title.trim()) return toast.error("Inserisci prima un titolo");
+    if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
     setBusy("gen");
     try {
       const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone } });

@@ -33,7 +33,7 @@ export function Markdown({ md, figures }: { md: string; figures: Figure[] }) {
     if (ul || ol) {
       if (list.length && ordered !== !!ol) flush(i);
       ordered = !!ol;
-      list.push((ul ?? ol)![1]);
+      list.push((ul ?? ol)![1] ?? "");
       return;
     }
     flush(i);
