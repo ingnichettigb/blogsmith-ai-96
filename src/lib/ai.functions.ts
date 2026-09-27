@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 async function callAI(system: string, user: string): Promise<string> {
-  const key = process.env.LOVABLE_API_KEY;
+  const key = process.env['LOVABLE_API_KEY'];
   if (!key) throw new Error("Chiave AI non configurata");
   const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
     method: "POST",

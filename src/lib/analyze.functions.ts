@@ -102,10 +102,10 @@ export const analyzeSite = createServerFn({ method: "POST" })
 
     const fontSet = new Set<string>();
     for (const m of html.matchAll(/fonts\.googleapis\.com\/css2?\?([^"'>]+)/gi)) {
-      for (const f of m[1].matchAll(/family=([^&:;]+)/g)) fontSet.add(decodeURIComponent(f[1].replace(/\+/g, " ")));
+      for (const f of (m[1] ?? "").matchAll(/family=([^&:;]+)/g)) fontSet.add(decodeURIComponent((f[1] ?? "").replace(/\+/g, " ")));
     }
     for (const m of css.matchAll(/font-family\s*:\s*([^;}{]+)/gi)) {
-      const first = m[1].split(",")[0].replace(/["']/g, "").trim();
+      const first = (m[1] ?? "").split(",")[0]!.replace(/["']/g, "").trim();
       if (first && !/^(inherit|var\(|initial|sans-serif|serif|monospace|system-ui|-apple-system)/i.test(first))
         fontSet.add(first);
     }
