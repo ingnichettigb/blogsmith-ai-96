@@ -101,8 +101,26 @@ export function ArticlePanel() {
         <div>
           <label htmlFor="title" className="mb-1 block font-bold">Titolo dell'articolo</label>
           <Input id="title" value={art.title} onChange={(e) => upd({ title: e.target.value, slug: slugify(e.target.value) })} className="h-14 border-2 text-xl font-bold" />
-          <p className="mt-1 text-muted-foreground">Indirizzo: <code>/blog/{art.slug || "slug"}</code></p>
+          <p className="mt-1 text-muted-foreground">Cartella: <code>{art.number}-{art.slug || "slug"}/</code></p>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="num" className="mb-1 block font-bold">Numero progressivo</label>
+            <Input id="num" value={art.number} onChange={(e) => upd({ number: pad3(Number(e.target.value.replace(/\D/g, "")) || 1) })} className="h-12 border-2 text-lg" />
+          </div>
+          <div>
+            <label htmlFor="author" className="mb-1 block font-bold">Autore</label>
+            <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="cta" className="mb-1 block font-bold">Invito all'azione nell'articolo</label>
+          <select id="cta" value={art.ctaProductId} onChange={(e) => upd({ ctaProductId: e.target.value })} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
+            <option value="">Nessuno</option>
+            {state.products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        </div>
+
         <div>
           <label htmlFor="tone" className="mb-1 block font-bold">Tono</label>
           <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
