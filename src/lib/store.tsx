@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SiteAnalysis } from "./analyze.functions";
+import type { Lang, Translation } from "./blocks";
 
 export type Product = {
   id: string;
@@ -13,14 +14,19 @@ export type Product = {
 export type Figure = { id: string; caption: string; src: string };
 
 export type Article = {
+  number: string;
+  author: string;
   title: string;
   slug: string;
   excerpt: string;
   markdown: string;
   cover: string;
+  coverAlt: string;
   figures: Figure[];
   minWords: number;
   date: string;
+  ctaProductId: string;
+  translations: Partial<Record<Lang, Translation>>;
 };
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
@@ -51,8 +57,23 @@ const initial: State = {
     },
   ],
   rotation: { mode: "sequential", intervalSec: 8 },
-  article: { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10) },
+  article: {
+    number: "001",
+    author: "Nichetti Gian Battista",
+    title: "",
+    slug: "",
+    excerpt: "",
+    markdown: "",
+    cover: "",
+    coverAlt: "",
+    figures: [],
+    minWords: 1500,
+    date: new Date().toISOString().slice(0, 10),
+    ctaProductId: "",
+    translations: {},
+  },
 };
+
 
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
 const KEY = "blogengine-state-v1";
