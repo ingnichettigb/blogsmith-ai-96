@@ -78,23 +78,6 @@ export function ArticlePanel() {
     finally { setBusy(""); }
   };
 
-
-  const doGen = async () => {
-    if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
-    setBusy("gen");
-    try {
-      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone } });
-      const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
-      const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
-      const slug = art.slug || slugify(art.title);
-      const figures: Figure[] = Array.from({ length: n }, (_, i) => art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: stock(`${slug}-${i + 1}`) });
-      upd({ markdown: r.markdown, excerpt: r.excerpt, slug, figures, cover: art.cover || stock(slug), date: new Date().toISOString().slice(0, 10) });
-      const w = countWords(r.markdown);
-      toast[w >= art.minWords ? "success" : "warning"](`Articolo generato: ${w} parole`);
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
-    finally { setBusy(""); }
-  };
-
   return (
     <div className="space-y-6">
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
