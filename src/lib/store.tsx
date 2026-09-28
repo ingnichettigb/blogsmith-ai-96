@@ -84,7 +84,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) setState({ ...initial, ...JSON.parse(raw) });
+      if (raw) {
+        const p = JSON.parse(raw) as Partial<State>;
+        setState({ ...initial, ...p, article: { ...initial.article, ...(p.article ?? {}) } });
+      }
     } catch {
       /* ignore */
     }
