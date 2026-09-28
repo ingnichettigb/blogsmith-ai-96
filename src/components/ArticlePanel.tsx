@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle } from "lucide-react";
+import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Languages } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { generateArticle, suggestTopics } from "@/lib/ai.functions";
+import { generateArticle, suggestTopics, translateArticle } from "@/lib/ai.functions";
 import { countWords, slugify, useStore, type Figure } from "@/lib/store";
+import { LANGS, LANG_LABEL, pad3, type Lang, type Translation } from "@/lib/blocks";
+import { italianTranslation } from "@/lib/article";
 import { fileToDataUrl } from "./ProductsPanel";
 
 const PRESETS = [800, 1500, 2500];
@@ -20,9 +22,10 @@ export function ArticlePanel() {
   const [ideas, setIdeas] = useState<string[]>([]);
   const [tone, setTone] = useState("professionale");
   const [figCount, setFigCount] = useState(2);
-  const [busy, setBusy] = useState<"" | "ideas" | "gen">("");
+  const [busy, setBusy] = useState<"" | "ideas" | "gen" | "tr">("");
   const suggest = useServerFn(suggestTopics);
   const gen = useServerFn(generateArticle);
+  const translate = useServerFn(translateArticle);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
 
@@ -32,6 +35,49 @@ export function ArticlePanel() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
     finally { setBusy(""); }
   };
+
+  const doGen = async () => {
+    if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
+    setBusy("gen");
+    try {
+      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone } });
+      const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
+      const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
+      const slug = art.slug || slugify(art.title);
+      const figures: Figure[] = Array.from({ length: n }, (_, i) => art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: stock(`${slug}-${i + 1}`) });
+      upd({
+        markdown: r.markdown,
+        excerpt: r.excerpt,
+        coverAlt: r.coverAlt || art.coverAlt,
+        slug,
+        figures,
+        cover: art.cover || stock(slug),
+        date: new Date().toISOString().slice(0, 10),
+        translations: {},
+      });
+      const w = countWords(r.markdown);
+      toast[w >= art.minWords ? "success" : "warning"](`Articolo generato: ${w} parole`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setBusy(""); }
+  };
+
+  const doTranslate = async () => {
+    if (!art.markdown) { toast.error("Genera prima l'articolo"); return; }
+    setBusy("tr");
+    const it = italianTranslation(art, state.products);
+    const payload = JSON.stringify(it);
+    const next: Partial<Record<Lang, Translation>> = { ...art.translations };
+    try {
+      for (const lang of ["en", "de", "es"] as Lang[]) {
+        const t = (await translate({ data: { lang, payload } })) as Translation;
+        next[lang] = { ...t, readingTime: it.readingTime };
+        set({ article: { ...art, translations: { ...next } } });
+      }
+      toast.success("Traduzioni EN, DE, ES pronte");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setBusy(""); }
+  };
+
 
   const doGen = async () => {
     if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
