@@ -84,9 +84,47 @@ Inserisci esattamente ${data.figures} segnaposto per figure interne, ciascuno su
 Alla fine NON aggiungere note.`,
       `Titolo: ${data.title}`,
     );
-    const excerpt = await callAI(
-      "Riassumi in una frase di massimo 30 parole, in italiano, senza virgolette.",
-      md.slice(0, 3000),
+    const meta = await callAI(
+      `Rispondi SOLO con un JSON valido, senza testo attorno, nel formato {"excerpt":"...","coverAlt":"..."}.
+"excerpt": riassunto in italiano di massimo 30 parole. "coverAlt": testo alternativo dell'immagine di copertina, massimo 15 parole.`,
+      `Titolo: ${data.title}\n\n${md.slice(0, 3000)}`,
     );
-    return { markdown: md.trim(), excerpt: excerpt.trim() };
+    let excerpt = "";
+    let coverAlt = "";
+    try {
+      const j = JSON.parse(meta.replace(/^```(?:json)?|```$/gm, "").trim());
+      excerpt = String(j.excerpt ?? "").trim();
+      coverAlt = String(j.coverAlt ?? "").trim();
+    } catch {
+      excerpt = meta.trim().slice(0, 300);
+    }
+    return { markdown: md.trim(), excerpt, coverAlt };
   });
+
+const LANG_NAME: Record<string, string> = { en: "inglese", de: "tedesco", es: "spagnolo", it: "italiano" };
+
+export const translateArticle = createServerFn({ method: "POST" })
+  .inputValidator((d: { lang: string; payload: string }) => ({
+    lang: String(d.lang ?? "en").slice(0, 5),
+    payload: String(d.payload ?? "").slice(0, 120000),
+  }))
+  .handler(async ({ data }) => {
+    const target = LANG_NAME[data.lang] ?? "inglese";
+    const raw = await callAI(
+      `Sei un traduttore professionale. Traduci in ${target} il JSON dell'articolo che ricevi.
+Rispondi SOLO con un JSON valido, senza testo attorno e senza blocchi di codice.
+Mantieni ESATTAMENTE la stessa struttura e lo stesso ordine dei blocchi, gli stessi campi "type", i valori "src" e i link invariati.
+Traduci solo i campi testuali: title, excerpt, text, items, caption. Il campo readingTime deve restare identico.`,
+      data.payload,
+    );
+    const cleaned = raw.replace(/^```(?:json)?/m, "").replace(/```\s*$/m, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    const json = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+    try {
+      return JSON.parse(json) as unknown;
+    } catch {
+      throw new Error("La traduzione non è un JSON valido, riprova.");
+    }
+  });
+
