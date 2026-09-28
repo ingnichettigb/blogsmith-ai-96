@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
 import { Download, FileJson, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Markdown } from "./Markdown";
-import { countWords, useStore, type Article, type Product, type Rotation } from "@/lib/store";
+import { Blocks } from "./Blocks";
+import { countWords, useStore, type Product, type Rotation } from "@/lib/store";
+import { LANGS, LANG_LABEL, blockWords, type Lang } from "@/lib/blocks";
+import { articleJson, folderName, italianTranslation, toWebp } from "@/lib/article";
 
 function SponsoredSidebar({ products, rotation }: { products: Product[]; rotation: Rotation }) {
   const [i, setI] = useState(0);
@@ -27,58 +29,44 @@ function SponsoredSidebar({ products, rotation }: { products: Product[]; rotatio
   );
 }
 
-function frontmatter(a: Article, ext: string) {
-  return `---\ntitle: ${JSON.stringify(a.title)}\nslug: ${a.slug}\ndate: ${a.date}\nexcerpt: ${JSON.stringify(a.excerpt)}\ncover: /blog/${a.slug}/copertina.${ext}\nminWords: ${a.minWords}\nwords: ${countWords(a.markdown)}\n---\n\n`;
-}
+const INSTRUCTIONS = (dir: string) => `# Installazione rapida
 
-async function toBlob(src: string): Promise<{ blob: Blob; ext: string } | null> {
-  try {
-    const r = await fetch(src);
-    const blob = await r.blob();
-    const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg").replace("svg+xml", "svg");
-    return { blob, ext };
-  } catch { return null; }
-}
-
-const INSTRUCTIONS = (slug: string) => `# Installazione rapida
-
-1. Copia la cartella \`public/blog/${slug}/\` dentro la cartella \`public/\` del tuo sito.
-2. Copia \`src/content/blog/${slug}.md\` (o \`.json\`) in \`src/content/blog/\`.
-3. Copia \`src/content/sponsored.json\` in \`src/content/\` per la sidebar destra a rotazione.
-4. Se il sito non ha ancora il blog, usa il prompt generato in "Analisi sito" per creare /blog e /blog/[slug].
-5. Pubblica il sito: l'articolo sarà visibile su /blog/${slug}.
+1. Copia l'intera cartella \`${dir}/\` nel repository GitHub del sito, dentro la cartella degli articoli del blog.
+2. La cartella contiene tutto: \`article.json\` (testi e metadati nelle 4 lingue), \`copertina.webp\` e le eventuali \`figura-N.webp\`.
+3. Le immagini sono richiamate con il nome file relativo, quindi non serve modificare nulla.
+4. Copia \`sponsored.json\` nella configurazione del sito per la fascia laterale destra a rotazione.
+5. Se il sito non ha ancora il blog, usa il prompt generato in "Analisi sito" per creare /blog e /blog/[slug].
 `;
 
 export function PreviewPanel() {
   const { state } = useStore();
   const a = state.article;
   const [view, setView] = useState<"list" | "single">("single");
-  const words = countWords(a.markdown);
+  const [lang, setLang] = useState<Lang>("it");
+  const doc = useMemo(() => articleJson(a, state.products), [a, state.products]);
+  const t = doc.translations[lang] ?? doc.translations.it!;
+  const words = lang === "it" ? countWords(a.markdown) : blockWords(t.content);
 
   const exportZip = async () => {
     if (!a.markdown) { toast.error("Genera prima un articolo"); return; }
+    const dirName = folderName(a);
     const zip = new JSZip();
-    const dir = zip.folder(`public/blog/${a.slug}`)!;
-    let coverExt = "webp";
-    if (a.cover) { const c = await toBlob(a.cover); if (c) { coverExt = c.ext; dir.file(`copertina.${c.ext}`, c.blob); } }
-    let md = a.markdown;
-    const figMeta: { src: string; caption: string }[] = [];
+    const dir = zip.folder(dirName)!;
+    dir.file("article.json", JSON.stringify(doc, null, 2));
+    if (a.cover) {
+      const c = await toWebp(a.cover, 1600);
+      if (c) dir.file("copertina.webp", c);
+    }
     for (let i = 0; i < a.figures.length; i++) {
       const f = a.figures[i]!;
-      const b = await toBlob(f.src);
-      const name = `figura-${i + 1}.${b?.ext ?? "jpg"}`;
-      if (b) dir.file(name, b.blob);
-      figMeta.push({ src: `/blog/${a.slug}/${name}`, caption: f.caption });
+      const b = await toWebp(f.src, 1280);
+      if (b) dir.file(`figura-${i + 1}.webp`, b);
     }
-    let n = 0;
-    md = md.replace(/\[\[FIGURA:\s*(.+?)\]\]/g, (_, cap) => { const f = figMeta[n++]; return f ? `![${f.caption || cap}](${f.src})` : ""; });
-    zip.file(`src/content/blog/${a.slug}.md`, frontmatter(a, coverExt) + `# ${a.title}\n\n` + md);
-    zip.file(`src/content/blog/${a.slug}.json`, JSON.stringify({ title: a.title, slug: a.slug, date: a.date, excerpt: a.excerpt, cover: `/blog/${a.slug}/copertina.${coverExt}`, figures: figMeta, words, body: md }, null, 2));
-    zip.file("src/content/sponsored.json", JSON.stringify({ rotation: state.rotation, products: state.products.map(({ id: _id, ...p }) => p) }, null, 2));
-    zip.file("ISTRUZIONI.md", INSTRUCTIONS(a.slug));
+    zip.file("sponsored.json", JSON.stringify({ rotation: state.rotation, products: state.products.map(({ id: _id, ...p }) => p) }, null, 2));
+    zip.file("ISTRUZIONI.md", INSTRUCTIONS(dirName));
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), { href: url, download: `blog-${a.slug}.zip` }).click();
+    Object.assign(document.createElement("a"), { href: url, download: `${dirName}.zip` }).click();
     URL.revokeObjectURL(url);
     toast.success("Pacchetto scaricato");
   };
@@ -89,14 +77,39 @@ export function PreviewPanel() {
     URL.revokeObjectURL(url);
   };
 
+  const markdownExport = () =>
+    `# ${t.title}\n\n` +
+    t.content
+      .map((b) =>
+        b.type === "heading2" ? `## ${b.text}`
+        : b.type === "heading3" ? `### ${b.text}`
+        : b.type === "quote" ? `> ${b.text}`
+        : b.type === "list" ? b.items.map((x) => `- ${x}`).join("\n")
+        : b.type === "image" ? `![${b.caption}](${b.src})`
+        : b.type === "cta" ? `[${b.text}](${b.link})`
+        : b.text,
+      )
+      .join("\n\n");
+
   return (
     <div className="space-y-6">
-      <div className="sticky top-[72px] z-10 flex flex-wrap items-center gap-3 rounded-xl border-2 bg-card p-3">
-        <div role="tablist" className="grid flex-1 grid-cols-2 gap-2">
-          <button role="tab" aria-selected={view === "list"} onClick={() => setView("list")} className={`h-12 rounded-md border-2 font-bold ${view === "list" ? "bg-primary text-primary-foreground" : ""}`}>Vetrina /blog</button>
-          <button role="tab" aria-selected={view === "single"} onClick={() => setView("single")} className={`h-12 rounded-md border-2 font-bold ${view === "single" ? "bg-primary text-primary-foreground" : ""}`}>Articolo /blog/slug</button>
+      <div className="sticky top-[72px] z-10 space-y-3 rounded-xl border-2 bg-card p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="tablist" className="grid flex-1 grid-cols-2 gap-2">
+            <button role="tab" aria-selected={view === "list"} onClick={() => setView("list")} className={`h-12 rounded-md border-2 font-bold ${view === "list" ? "bg-primary text-primary-foreground" : ""}`}>Vetrina /blog</button>
+            <button role="tab" aria-selected={view === "single"} onClick={() => setView("single")} className={`h-12 rounded-md border-2 font-bold ${view === "single" ? "bg-primary text-primary-foreground" : ""}`}>Articolo /blog/slug</button>
+          </div>
+          <span className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${words >= a.minWords ? "text-success" : "text-destructive"}`} aria-live="polite">{words} / {a.minWords} parole</span>
         </div>
-        <span className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${words >= a.minWords ? "text-success" : "text-destructive"}`} aria-live="polite">{words} / {a.minWords} parole</span>
+        <div role="tablist" aria-label="Lingua" className="grid grid-cols-4 gap-2">
+          {LANGS.map((l) => (
+            <button key={l} role="tab" aria-selected={lang === l} disabled={l !== "it" && !doc.translations[l]}
+              onClick={() => setLang(l)}
+              className={`h-11 rounded-md border-2 font-bold uppercase disabled:opacity-40 ${lang === l ? "bg-primary text-primary-foreground" : ""}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-xl border-2 bg-background p-4 sm:p-8">
@@ -107,11 +120,11 @@ export function PreviewPanel() {
             <h1 className="mb-6 text-4xl font-extrabold">Blog</h1>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               <article className="overflow-hidden rounded-xl border-2 bg-card">
-                {a.cover && <img src={a.cover} alt="" className="aspect-video w-full object-cover" />}
+                {a.cover && <img src={a.cover} alt={a.coverAlt} className="aspect-video w-full object-cover" />}
                 <div className="p-4">
-                  <time className="text-muted-foreground">{a.date}</time>
-                  <h2 className="mt-1 text-xl font-bold">{a.title}</h2>
-                  <p className="mt-2 text-muted-foreground">{a.excerpt}</p>
+                  <time className="text-muted-foreground">{a.date} · {t.readingTime}</time>
+                  <h2 className="mt-1 text-xl font-bold">{t.title}</h2>
+                  <p className="mt-2 text-muted-foreground">{t.excerpt}</p>
                   <button onClick={() => setView("single")} className="mt-3 font-bold text-primary underline underline-offset-4">Leggi →</button>
                 </div>
               </article>
@@ -120,10 +133,10 @@ export function PreviewPanel() {
         ) : (
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
             <article className="min-w-0">
-              {a.cover && <img src={a.cover} alt="" className="aspect-video w-full rounded-xl border-2 object-cover" />}
-              <h1 className="mt-6 text-3xl font-extrabold sm:text-4xl">{a.title}</h1>
-              <time className="text-muted-foreground">{a.date}</time>
-              <Markdown md={a.markdown} figures={a.figures} />
+              {a.cover && <img src={a.cover} alt={a.coverAlt} className="aspect-video w-full rounded-xl border-2 object-cover" />}
+              <h1 className="mt-6 text-3xl font-extrabold sm:text-4xl">{t.title}</h1>
+              <p className="text-muted-foreground">{a.date} · {a.author} · {t.readingTime}</p>
+              <Blocks content={t.content} figures={a.figures} />
             </article>
             <aside className="lg:sticky lg:top-40 lg:self-start">
               <SponsoredSidebar products={state.products} rotation={state.rotation} />
@@ -135,11 +148,11 @@ export function PreviewPanel() {
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="text-2xl font-extrabold">Esporta</h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Button size="lg" className="h-14 text-lg font-bold" onClick={exportZip}><Download /> Pacchetto .zip</Button>
-          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl(`${a.slug}.md`, frontmatter(a, "webp") + `# ${a.title}\n\n` + a.markdown, "text/markdown")}><FileText /> Solo Markdown</Button>
-          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl(`${a.slug}.json`, JSON.stringify({ ...a, words }, null, 2), "application/json")}><FileJson /> Solo JSON</Button>
+          <Button size="lg" className="h-14 text-lg font-bold" onClick={exportZip}><Download /> Cartella .zip</Button>
+          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl(`${folderName(a)}-${lang}.md`, markdownExport(), "text/markdown")}><FileText /> Markdown ({LANG_LABEL[lang]})</Button>
+          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl("article.json", JSON.stringify(doc, null, 2), "application/json")}><FileJson /> article.json</Button>
         </div>
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-base">{INSTRUCTIONS(a.slug || "slug")}</pre>
+        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-base">{INSTRUCTIONS(a.slug ? folderName(a) : "001-slug")}</pre>
       </section>
     </div>
   );
