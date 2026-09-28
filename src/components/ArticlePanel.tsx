@@ -195,6 +195,23 @@ export function ArticlePanel() {
           <Textarea aria-label="Corpo articolo in Markdown" value={art.markdown} onChange={(e) => upd({ markdown: e.target.value })} className="min-h-96 border-2 font-mono text-base" />
         </section>
       )}
+
+      {art.markdown && (
+        <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
+          <h2 className="flex items-center gap-2 text-2xl font-extrabold"><Languages /> 4. Lingue</h2>
+          <div className="flex flex-wrap gap-2">
+            {LANGS.map((l) => (
+              <span key={l} className={`rounded-md border-2 px-3 py-1 font-bold ${l === "it" || art.translations[l] ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+                {LANG_LABEL[l]} {l === "it" || art.translations[l] ? "✓" : "—"}
+              </span>
+            ))}
+          </div>
+          <Button size="lg" className="h-14 w-full text-lg font-bold" onClick={doTranslate} disabled={!!busy}>
+            {busy === "tr" ? <><Loader2 className="animate-spin" /> Traduzione in corso…</> : <><Languages /> Genera traduzioni EN, DE, ES</>}
+          </Button>
+        </section>
+      )}
     </div>
+
   );
 }
