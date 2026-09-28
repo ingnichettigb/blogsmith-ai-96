@@ -158,6 +158,10 @@ export function ArticlePanel() {
           </div>
         </div>
         <div>
+          <label htmlFor="coverAlt" className="mb-1 block font-bold">Descrizione della copertina (testo alternativo)</label>
+          <Input id="coverAlt" value={art.coverAlt} onChange={(e) => upd({ coverAlt: e.target.value })} className="h-12 border-2 text-lg" />
+        </div>
+        <div>
           <label htmlFor="figc" className="mb-1 block font-bold">Figure interne nei paragrafi</label>
           <Input id="figc" type="number" min={0} max={6} value={figCount} onChange={(e) => setFigCount(Number(e.target.value))} className="h-12 border-2 text-lg sm:w-40" />
         </div>
