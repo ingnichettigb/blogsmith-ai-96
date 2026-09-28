@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SiteAnalysis } from "./analyze.functions";
+import type { Lang, Translation } from "./blocks";
 
 export type Product = {
   id: string;
@@ -8,41 +9,31 @@ export type Product = {
   badge: string;
   link: string;
   image: string;
-  /** Se presente, indica che la carta è stata estratta automaticamente da un SponsoredLink e viene sostituita ad ogni "Aggiorna". */
-  sourceLinkId?: string;
-};
-
-export type SponsoredLink = {
-  id: string;
-  url: string;
-  lastSyncedAt?: string;
-  cardCount?: number;
-  error?: string;
 };
 
 export type Figure = { id: string; caption: string; src: string };
 
 export type Article = {
+  number: string;
+  author: string;
   title: string;
   slug: string;
   excerpt: string;
   markdown: string;
   cover: string;
+  coverAlt: string;
   figures: Figure[];
   minWords: number;
   date: string;
-  referenceUrl: string;
-  referenceImages: boolean;
-  /** Bozza già scritta dall'utente, usata come base per la generazione AI. */
-  draftText: string;
+  ctaProductId: string;
+  translations: Partial<Record<Lang, Translation>>;
 };
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
 
-export type State = {
+type State = {
   analysis: SiteAnalysis | null;
   products: Product[];
-  sponsoredLinks: SponsoredLink[];
   rotation: Rotation;
   article: Article;
 };
@@ -52,11 +43,6 @@ export const slugify = (s: string) =>
 
 export const countWords = (s: string) =>
   s.replace(/\[\[FIGURA:[^\]]*\]\]/g, " ").replace(/[#*_>`\-]/g, " ").split(/\s+/).filter((w) => /\p{L}|\d/u.test(w)).length;
-
-/** Articolo vuoto ("foglio bianco"): usato sia per lo stato iniziale sia dal pulsante "Azzera tutto". */
-export function createBlankArticle(): Article {
-  return { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false, draftText: "" };
-}
 
 const initial: State = {
   analysis: null,
@@ -70,10 +56,24 @@ const initial: State = {
       image: "https://picsum.photos/seed/seo/400/300",
     },
   ],
-  sponsoredLinks: [],
   rotation: { mode: "sequential", intervalSec: 8 },
-  article: createBlankArticle(),
+  article: {
+    number: "001",
+    author: "Nichetti Gian Battista",
+    title: "",
+    slug: "",
+    excerpt: "",
+    markdown: "",
+    cover: "",
+    coverAlt: "",
+    figures: [],
+    minWords: 1500,
+    date: new Date().toISOString().slice(0, 10),
+    ctaProductId: "",
+    translations: {},
+  },
 };
+
 
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
 const KEY = "blogengine-state-v1";
@@ -84,7 +84,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) setState({ ...initial, ...JSON.parse(raw) });
+      if (raw) {
+        const p = JSON.parse(raw) as Partial<State>;
+        setState({ ...initial, ...p, article: { ...initial.article, ...(p.article ?? {}) } });
+      }
     } catch {
       /* ignore */
     }
