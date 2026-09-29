@@ -1,15 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AnalysisPanel } from "@/components/AnalysisPanel";
 import { ProductsPanel } from "@/components/ProductsPanel";
 import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
-import { StoreProvider, useStore, type State } from "@/lib/store";
-import { generateBackupFilename, saveBackup, restoreBackup, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,111 +18,6 @@ export const Route = createFileRoute("/")({
   }),
   component: Index,
 });
-
-function formatHistoryDate(iso: string) {
-  return new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function SaveRestoreControls() {
-  const { state, set } = useStore();
-  const [busy, setBusy] = useState<"" | "save" | "restore">("");
-  const [history, setHistory] = useState<BackupHistoryEntry[]>([]);
-
-  useEffect(() => {
-    setHistory(getBackupHistory());
-  }, []);
-
-  const doSave = async () => {
-    setBusy("save");
-    try {
-      const filename = generateBackupFilename(state.article.title);
-      const result = await saveBackup(state, filename);
-      if (result === "saved") toast.success(`Salvato come ${filename}`);
-      if (result === "downloaded") toast.success(`Scaricato ${filename}`);
-      if (result !== "cancelled") setHistory(getBackupHistory());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Errore durante il salvataggio");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const doRestore = async () => {
-    setBusy("restore");
-    try {
-      const data = await restoreBackup();
-      if (!data || typeof data !== "object") return;
-      set(data as Partial<State>);
-      toast.success("Lavoro ripristinato");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "File di backup non valido");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" className="h-11 min-w-11 border-2" onClick={doSave} disabled={busy !== ""} aria-label="Salva tutto il lavoro">
-        <Save className={busy === "save" ? "animate-pulse" : ""} />
-        <span className="hidden sm:inline">Salva</span>
-      </Button>
-      <Button variant="outline" className="h-11 min-w-11 border-2" onClick={doRestore} disabled={busy !== ""} aria-label="Ripristina da backup">
-        <Upload className={busy === "restore" ? "animate-pulse" : ""} />
-        <span className="hidden sm:inline">Ripristina</span>
-      </Button>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="h-11 min-w-11 border-2" aria-label="Cronologia salvataggi">
-            <History />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-96">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="font-bold">Cronologia salvataggi</p>
-            {history.length > 0 && (
-              <button
-                className="text-sm font-semibold text-destructive underline underline-offset-2"
-                onClick={() => { setHistory(clearBackupHistory()); toast.success("Cronologia svuotata"); }}
-              >
-                Svuota tutto
-              </button>
-            )}
-          </div>
-          {history.length === 0 ? (
-            <p className="text-muted-foreground">Nessun salvataggio ancora effettuato.</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_2rem] gap-2 border-b pb-1 text-sm font-bold text-muted-foreground">
-                <span>File</span>
-                <span>Data</span>
-                <span className="sr-only">Elimina</span>
-              </div>
-              <ul className="max-h-64 space-y-1 overflow-auto text-sm">
-                {history.map((h) => (
-                  <li key={h.savedAt} className="grid grid-cols-[minmax(0,1fr)_auto_2rem] items-center gap-2 border-b py-1.5 last:border-0">
-                    <span className="truncate font-mono" title={h.filename}>{h.filename}</span>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatHistoryDate(h.savedAt)}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`Rimuovi dalla cronologia ${h.filename}`}
-                      onClick={() => setHistory(removeBackupHistoryEntry(h.savedAt))}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-muted-foreground">Rimuove solo la voce dall'elenco: non cancella il file già salvato sul tuo dispositivo.</p>
-            </>
-          )}
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
 
 const TABS = [
   { id: "analisi", label: "Analisi sito", icon: ScanSearch },
@@ -148,19 +39,16 @@ function Index() {
   }, [dark]);
 
   return (
-    <StoreProvider>
+    <>
       <div className="min-h-screen pb-24 lg:pb-8">
         <header className="sticky top-0 z-20 border-b-2 bg-background">
           <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
             <div className="min-w-0">
               <p className="truncate font-display text-2xl font-black">Blog<span className="text-primary">Engine</span> AI</p>
             </div>
-            <div className="flex items-center gap-2">
-              <SaveRestoreControls />
-              <Button variant="outline" className="min-h-11 min-w-11 border-2" onClick={() => setDark(!dark)} aria-label={dark ? "Tema chiaro" : "Tema scuro"}>
-                {dark ? <Sun /> : <Moon />}
-              </Button>
-            </div>
+            <Button variant="outline" className="min-h-11 min-w-11 border-2" onClick={() => setDark(!dark)} aria-label={dark ? "Tema chiaro" : "Tema scuro"}>
+              {dark ? <Sun /> : <Moon />}
+            </Button>
           </div>
           <nav className="mx-auto hidden max-w-6xl gap-2 px-4 pb-3 lg:flex" aria-label="Sezioni">
             {TABS.map((t) => (
@@ -189,6 +77,6 @@ function Index() {
           ))}
         </nav>
       </div>
-    </StoreProvider>
+    </>
   );
 }
