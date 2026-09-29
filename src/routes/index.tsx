@@ -6,7 +6,6 @@ import { AnalysisPanel } from "@/components/AnalysisPanel";
 import { ProductsPanel } from "@/components/ProductsPanel";
 import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
-import { StoreProvider } from "@/lib/store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -40,7 +39,7 @@ function Index() {
   }, [dark]);
 
   return (
-    <StoreProvider>
+    <>
       <div className="min-h-screen pb-24 lg:pb-8">
         <header className="sticky top-0 z-20 border-b-2 bg-background">
           <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
@@ -78,6 +77,6 @@ function Index() {
           ))}
         </nav>
       </div>
-    </StoreProvider>
+    </>
   );
 }
