@@ -18,8 +18,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { generateArticle, suggestTopics } from "@/lib/ai.functions";
 import { fetchReferencePage } from "@/lib/reference.functions";
-import { countWords, createBlankArticle, slugify, useStore, type Figure } from "@/lib/store";
+import { countWords, createBlankArticle, DEFAULT_AUTHOR, slugify, useStore, type Figure } from "@/lib/store";
 import { fileToDataUrl } from "./ProductsPanel";
+import { TopicDialog } from "./TopicDialog";
 
 const PRESETS = [800, 1500, 2500];
 const stock = (seed: string, w = 1600, h = 900) => `https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}`;
@@ -38,7 +39,7 @@ export function ArticlePanel() {
   const fetchRef = useServerFn(fetchReferencePage);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
-  const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && art.figures.length === 0;
+  const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && !art.topic && art.figures.length === 0 && art.author === DEFAULT_AUTHOR;
 
   const doReset = () => {
     upd(createBlankArticle());
@@ -105,7 +106,7 @@ export function ArticlePanel() {
             <AlertDialogHeader>
               <AlertDialogTitle>Azzerare l'articolo corrente?</AlertDialogTitle>
               <AlertDialogDescription>
-                Titolo, testo, copertina e figure verranno cancellati per iniziare un articolo nuovo da zero. L'analisi del sito e i prodotti sponsorizzati non vengono toccati. Se non hai ancora salvato, l'articolo attuale andrà perso.
+                Titolo, testo, copertina, figure, argomento e numero verranno cancellati per iniziare un articolo nuovo da zero (l'autore torna a {DEFAULT_AUTHOR}). L'analisi del sito, i prodotti sponsorizzati e l'archivio argomenti non vengono toccati. Se non hai ancora salvato, l'articolo attuale andrà perso.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -118,8 +119,11 @@ export function ArticlePanel() {
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="text-2xl font-extrabold">1. Argomento e titolo</h2>
+
+        <TopicDialog />
+
         <div>
-          <label htmlFor="niche" className="mb-1 block font-bold">Settore o parola chiave (per i suggerimenti)</label>
+          <label htmlFor="niche" className="mb-1 block font-bold">Settore o parola chiave (per i suggerimenti AI dei titoli)</label>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Input id="niche" value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="es. arredamento sostenibile" className="h-12 border-2 text-lg" />
             <Button variant="secondary" size="lg" className="h-12 border-2 text-lg font-bold" onClick={doIdeas} disabled={!!busy}>
@@ -137,7 +141,11 @@ export function ArticlePanel() {
         <div>
           <label htmlFor="title" className="mb-1 block font-bold">Titolo dell'articolo</label>
           <Input id="title" value={art.title} onChange={(e) => upd({ title: e.target.value, slug: slugify(e.target.value) })} className="h-14 border-2 text-xl font-bold" />
-          <p className="mt-1 text-muted-foreground">Indirizzo: <code>/blog/{art.slug || "slug"}</code></p>
+          <p className="mt-1 text-muted-foreground">Indirizzo: <code>/blog/{art.slug || "slug"}</code>{art.number && <> · N. <code>{art.number}</code></>}</p>
+        </div>
+        <div>
+          <label htmlFor="author" className="mb-1 block font-bold">Autore</label>
+          <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
         </div>
         <div>
           <label htmlFor="tone" className="mb-1 block font-bold">Tono</label>

@@ -39,8 +39,16 @@ function SaveRestoreControls() {
   const doSave = async () => {
     setBusy("save");
     try {
-      const filename = generateBackupFilename(state.article.title);
-      const result = await saveBackup(state, filename);
+      // Il numero progressivo scatta al primo salvataggio di un articolo e poi resta fisso
+      // (finché non si fa "Azzera tutto" per iniziarne uno nuovo).
+      let current = state;
+      if (!current.article.number) {
+        const number = String(current.nextArticleNumber).padStart(3, "0");
+        current = { ...current, article: { ...current.article, number }, nextArticleNumber: current.nextArticleNumber + 1 };
+        set({ article: current.article, nextArticleNumber: current.nextArticleNumber });
+      }
+      const filename = generateBackupFilename(current.article.title);
+      const result = await saveBackup(current, filename);
       if (result === "saved") toast.success(`Salvato come ${filename}`);
       if (result === "downloaded") toast.success(`Scaricato ${filename}`);
       if (result !== "cancelled") setHistory(getBackupHistory());

@@ -23,6 +23,10 @@ export type SponsoredLink = {
 export type Figure = { id: string; caption: string; src: string };
 
 export type Article = {
+  /** Numero progressivo (es. "001"), assegnato al primo "Salva" e poi mantenuto fisso per quell'articolo. */
+  number: string;
+  /** Argomento scelto dall'archivio topics (o vuoto se non ancora scelto). */
+  topic: string;
   title: string;
   slug: string;
   excerpt: string;
@@ -31,11 +35,14 @@ export type Article = {
   figures: Figure[];
   minWords: number;
   date: string;
+  author: string;
   referenceUrl: string;
   referenceImages: boolean;
   /** Bozza già scritta dall'utente, usata come base per la generazione AI. */
   draftText: string;
 };
+
+export const DEFAULT_AUTHOR = "team@corporateboostservice.eu";
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
 
@@ -43,6 +50,8 @@ export type State = {
   analysis: SiteAnalysis | null;
   products: Product[];
   sponsoredLinks: SponsoredLink[];
+  topics: string[];
+  nextArticleNumber: number;
   rotation: Rotation;
   article: Article;
 };
@@ -55,7 +64,22 @@ export const countWords = (s: string) =>
 
 /** Articolo vuoto ("foglio bianco"): usato sia per lo stato iniziale sia dal pulsante "Azzera tutto". */
 export function createBlankArticle(): Article {
-  return { title: "", slug: "", excerpt: "", markdown: "", cover: "", figures: [], minWords: 1500, date: new Date().toISOString().slice(0, 10), referenceUrl: "", referenceImages: false, draftText: "" };
+  return {
+    number: "",
+    topic: "",
+    title: "",
+    slug: "",
+    excerpt: "",
+    markdown: "",
+    cover: "",
+    figures: [],
+    minWords: 1500,
+    date: new Date().toISOString().slice(0, 10),
+    author: DEFAULT_AUTHOR,
+    referenceUrl: "",
+    referenceImages: false,
+    draftText: "",
+  };
 }
 
 const initial: State = {
@@ -71,6 +95,10 @@ const initial: State = {
     },
   ],
   sponsoredLinks: [],
+  /** Archivio persistente di tutti gli argomenti creati nel tempo (indipendente dall'articolo corrente). */
+  topics: [],
+  /** Prossimo numero progressivo da assegnare al primo "Salva" di un nuovo articolo. */
+  nextArticleNumber: 1,
   rotation: { mode: "sequential", intervalSec: 8 },
   article: createBlankArticle(),
 };
