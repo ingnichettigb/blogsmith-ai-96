@@ -7,12 +7,58 @@
 
 import type { Product, SponsoredLink, Rotation, State } from "./store";
 
-export type BackupHistoryEntry = { filename: string; savedAt: string };
+export type BackupHistoryEntry = {
+  filename: string;
+  savedAt: string;
+  /** true = una copia completa del salvataggio è conservata nel browser (IndexedDB) e si può ripristinare con un click. */
+  hasSnapshot?: boolean;
+};
 
 const HISTORY_KEY = "blogengine-backup-history-v1";
 const MAX_HISTORY = 20;
 
-// -- Cronologia (solo nomi/date dei salvataggi fatti, non i contenuti) -----
+// -- Copie dei salvataggi nel browser (IndexedDB: molto più capiente di localStorage, regge le immagini) --
+
+const DB_NAME = "blogengine-backups";
+const STORE = "snapshots";
+
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB non disponibile"));
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idb<T = unknown>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openDb();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const req = fn(tx.objectStore(STORE));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+const dropSnapshot = (savedAt: string) => {
+  void idb("readwrite", (s) => s.delete(savedAt)).catch(() => {
+    /* ignore */
+  });
+};
+
+// -- Cronologia (nome/data di ogni salvataggio + copia nel browser quando disponibile) -----
 
 export function getBackupHistory(): BackupHistoryEntry[] {
   try {
@@ -23,8 +69,11 @@ export function getBackupHistory(): BackupHistoryEntry[] {
   }
 }
 
-function addBackupHistoryEntry(filename: string): BackupHistoryEntry[] {
-  const history = [{ filename, savedAt: new Date().toISOString() }, ...getBackupHistory()].slice(0, MAX_HISTORY);
+function addBackupHistoryEntry(entry: BackupHistoryEntry): BackupHistoryEntry[] {
+  const all = [entry, ...getBackupHistory()];
+  const history = all.slice(0, MAX_HISTORY);
+  // le voci che escono dalla lista lasciano anche lo spazio occupato dalla loro copia nel browser
+  for (const old of all.slice(MAX_HISTORY)) if (old.hasSnapshot) dropSnapshot(old.savedAt);
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   } catch {
@@ -40,6 +89,7 @@ function addBackupHistoryEntry(filename: string): BackupHistoryEntry[] {
  * dati dell'articolo/prodotti correnti.
  */
 export function removeBackupHistoryEntry(savedAt: string): BackupHistoryEntry[] {
+  dropSnapshot(savedAt);
   const history = getBackupHistory().filter((h) => h.savedAt !== savedAt);
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
@@ -51,6 +101,9 @@ export function removeBackupHistoryEntry(savedAt: string): BackupHistoryEntry[] 
 
 /** Svuota completamente la cronologia dei salvataggi. */
 export function clearBackupHistory(): BackupHistoryEntry[] {
+  void idb("readwrite", (s) => s.clear()).catch(() => {
+    /* ignore */
+  });
   try {
     localStorage.removeItem(HISTORY_KEY);
   } catch {
@@ -123,8 +176,19 @@ async function writeJsonFile(json: string, filename: string, description: string
 }
 
 export async function saveBackup(state: unknown, filename: string): Promise<SaveResult> {
-  const result = await writeJsonFile(JSON.stringify(state, null, 2), filename, "Backup BlogEngine AI");
-  if (result !== "cancelled") addBackupHistoryEntry(filename);
+  const json = JSON.stringify(state, null, 2);
+  const result = await writeJsonFile(json, filename, "Backup BlogEngine AI");
+  if (result !== "cancelled") {
+    const savedAt = new Date().toISOString();
+    let hasSnapshot = false;
+    try {
+      await idb("readwrite", (s) => s.put(json, savedAt));
+      hasSnapshot = true;
+    } catch {
+      /* copia nel browser non riuscita: resta valido il file sul dispositivo */
+    }
+    addBackupHistoryEntry({ filename, savedAt, hasSnapshot });
+  }
   return result;
 }
 
@@ -150,6 +214,23 @@ export async function restoreBackup(): Promise<unknown | null> {
     };
     input.click();
   });
+}
+
+/**
+ * Ripristina una voce della cronologia. Se la copia è nel browser il ripristino è immediato;
+ * altrimenti (salvataggi vecchi, o copia non più disponibile) si apre la scelta del file .json.
+ */
+export async function restoreFromHistory(entry: BackupHistoryEntry): Promise<{ data: unknown; fromFile: boolean } | null> {
+  if (entry.hasSnapshot) {
+    try {
+      const json = await idb<string | undefined>("readonly", (s) => s.get(entry.savedAt));
+      if (typeof json === "string") return { data: JSON.parse(json), fromFile: false };
+    } catch {
+      /* passa alla scelta del file */
+    }
+  }
+  const data = await restoreBackup();
+  return data === null ? null : { data, fromFile: true };
 }
 
 // -- Pubblicità (carte sponsorizzate): file AAMMGGHHmm-PUBLICITA-<n>carte.json ----------

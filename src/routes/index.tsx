@@ -1,15 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History, Trash2 } from "lucide-react";
+import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History, Trash2, ArchiveRestore } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AnalysisPanel } from "@/components/AnalysisPanel";
 import { ProductsPanel } from "@/components/ProductsPanel";
 import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { useStore, type State } from "@/lib/store";
-import { generateBackupFilename, saveBackup, restoreBackup, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
+import { generateBackupFilename, saveBackup, restoreBackup, restoreFromHistory, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -31,6 +41,8 @@ function SaveRestoreControls() {
   const { state, set } = useStore();
   const [busy, setBusy] = useState<"" | "save" | "restore">("");
   const [history, setHistory] = useState<BackupHistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pending, setPending] = useState<BackupHistoryEntry | null>(null);
 
   useEffect(() => {
     setHistory(getBackupHistory());
@@ -73,7 +85,22 @@ function SaveRestoreControls() {
     }
   };
 
+  const doRestoreEntry = async (entry: BackupHistoryEntry) => {
+    setBusy("restore");
+    try {
+      const r = await restoreFromHistory(entry);
+      if (!r || typeof r.data !== "object" || r.data === null) return;
+      set(r.data as Partial<State>);
+      toast.success(`Ripristinato: ${entry.filename}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Il file scelto non è un backup valido");
+    } finally {
+      setBusy("");
+    }
+  };
+
   return (
+    <>
     <div className="flex items-center gap-2">
       <Button variant="outline" className="h-11 min-w-11 border-2" onClick={doSave} disabled={busy !== ""} aria-label="Salva tutto il lavoro">
         <Save className={busy === "save" ? "animate-pulse" : ""} />
@@ -83,7 +110,7 @@ function SaveRestoreControls() {
         <Upload className={busy === "restore" ? "animate-pulse" : ""} />
         <span className="hidden sm:inline">Ripristina</span>
       </Button>
-      <Popover>
+      <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" className="h-11 min-w-11 border-2" aria-label="Cronologia salvataggi">
             <History />
@@ -105,16 +132,28 @@ function SaveRestoreControls() {
             <p className="text-muted-foreground">Nessun salvataggio ancora effettuato.</p>
           ) : (
             <>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_2rem] gap-2 border-b pb-1 text-sm font-bold text-muted-foreground">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto_4.5rem] gap-2 border-b pb-1 text-sm font-bold text-muted-foreground">
                 <span>File</span>
                 <span>Data</span>
-                <span className="sr-only">Elimina</span>
+                <span className="sr-only">Ripristina o elimina</span>
               </div>
               <ul className="max-h-64 space-y-1 overflow-auto text-sm">
                 {history.map((h) => (
-                  <li key={h.savedAt} className="grid grid-cols-[minmax(0,1fr)_auto_2rem] items-center gap-2 border-b py-1.5 last:border-0">
+                  <li key={h.savedAt} className="grid grid-cols-[minmax(0,1fr)_auto_4.5rem] items-center gap-2 border-b py-1.5 last:border-0">
                     <span className="truncate font-mono" title={h.filename}>{h.filename}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatHistoryDate(h.savedAt)}</span>
+                    <span className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0 text-primary hover:bg-primary/10 hover:text-primary"
+                      aria-label={`Ripristina ${h.filename}`}
+                      title={h.hasSnapshot ? "Ripristina questo salvataggio" : "Ripristina: dovrai scegliere il file dal dispositivo"}
+                      disabled={busy !== ""}
+                      onClick={() => { setHistoryOpen(false); setPending(h); }}
+                    >
+                      <ArchiveRestore className="size-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -124,15 +163,34 @@ function SaveRestoreControls() {
                     >
                       <Trash2 className="size-4" />
                     </Button>
+                    </span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-muted-foreground">Rimuove solo la voce dall'elenco: non cancella il file già salvato sul tuo dispositivo.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Il pulsante di ripristino sostituisce il lavoro attuale. Eliminare una voce la toglie dall'elenco e cancella la sua copia nel browser, ma non il file già salvato sul tuo dispositivo.</p>
             </>
           )}
         </PopoverContent>
       </Popover>
     </div>
+    <AlertDialog open={!!pending} onOpenChange={(o) => { if (!o) setPending(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Ripristinare questo salvataggio?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {pending?.filename}
+            <br />
+            Il lavoro attuale (analisi, sponsorizzati, articolo) verrà sostituito da questo salvataggio. Se non hai salvato le modifiche recenti, andranno perse.
+            {pending && !pending.hasSnapshot && " Questo salvataggio è precedente alla copia nel browser: dopo aver confermato dovrai scegliere il file .json con questo nome dal tuo dispositivo."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Annulla</AlertDialogCancel>
+          <AlertDialogAction onClick={() => { if (pending) void doRestoreEntry(pending); }}>Ripristina</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
