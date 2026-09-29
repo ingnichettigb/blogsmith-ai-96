@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SiteAnalysis } from "./analyze.functions";
+import type { Lang, Translation } from "./blocks";
 
 export type Product = {
   id: string;
@@ -8,8 +9,6 @@ export type Product = {
   badge: string;
   link: string;
   image: string;
-  /** Se presente, indica che la carta è stata estratta automaticamente da un SponsoredLink e viene sostituita ad ogni "Aggiorna". */
-  sourceLinkId?: string;
 };
 
 export type SponsoredLink = {
@@ -32,6 +31,7 @@ export type Article = {
   excerpt: string;
   markdown: string;
   cover: string;
+  coverAlt: string;
   figures: Figure[];
   minWords: number;
   date: string;
@@ -40,6 +40,8 @@ export type Article = {
   referenceImages: boolean;
   /** Bozza già scritta dall'utente, usata come base per la generazione AI. */
   draftText: string;
+  ctaProductId: string;
+  translations: Partial<Record<Lang, Translation>>;
 };
 
 export const DEFAULT_AUTHOR = "team@corporateboostservice.eu";
@@ -79,6 +81,9 @@ export function createBlankArticle(): Article {
     referenceUrl: "",
     referenceImages: false,
     draftText: "",
+    coverAlt: "",
+    ctaProductId: "",
+    translations: {},
   };
 }
 
@@ -103,6 +108,7 @@ const initial: State = {
   article: createBlankArticle(),
 };
 
+
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
 const KEY = "blogengine-state-v1";
 
@@ -112,7 +118,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) setState({ ...initial, ...JSON.parse(raw) });
+      if (raw) {
+        const p = JSON.parse(raw) as Partial<State>;
+        setState({ ...initial, ...p, article: { ...initial.article, ...(p.article ?? {}) } });
+      }
     } catch {
       /* ignore */
     }

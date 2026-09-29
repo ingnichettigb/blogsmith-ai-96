@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2, Eraser } from "lucide-react";
+import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Languages, Link2, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { generateArticle, suggestTopics } from "@/lib/ai.functions";
+import { generateArticle, suggestTopics, translateArticle } from "@/lib/ai.functions";
 import { fetchReferencePage } from "@/lib/reference.functions";
 import { countWords, createBlankArticle, DEFAULT_AUTHOR, slugify, useStore, type Figure } from "@/lib/store";
+import { LANGS, LANG_LABEL, pad3, type Lang, type Translation } from "@/lib/blocks";
+import { italianTranslation } from "@/lib/article";
 import { fileToDataUrl } from "./ProductsPanel";
 import { TopicDialog } from "./TopicDialog";
 
@@ -33,10 +35,10 @@ export function ArticlePanel() {
   const [ideas, setIdeas] = useState<string[]>([]);
   const [tone, setTone] = useState("professionale");
   const [figCount, setFigCount] = useState(2);
-  const [busy, setBusy] = useState<"" | "ideas" | "gen">("");
+  const [busy, setBusy] = useState<"" | "ideas" | "gen" | "tr">("");
   const suggest = useServerFn(suggestTopics);
   const gen = useServerFn(generateArticle);
-  const fetchRef = useServerFn(fetchReferencePage);
+  const translate = useServerFn(translateArticle);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
   const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && !art.topic && art.figures.length === 0 && art.author === DEFAULT_AUTHOR;
@@ -61,34 +63,40 @@ export function ArticlePanel() {
     if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
     setBusy("gen");
     try {
-      let referenceText = "";
-      let referenceImages: string[] = [];
-      const refUrl = (art.referenceUrl || "").trim();
-      if (refUrl) {
-        try {
-          const ref = await fetchRef({ data: { url: refUrl } });
-          referenceText = ref.text;
-          referenceImages = ref.images;
-          if (art.referenceImages && referenceImages.length === 0) toast.warning("Nessuna immagine trovata nella pagina di riferimento");
-        } catch (e) {
-          toast.warning(`Pagina di riferimento non letta: ${e instanceof Error ? e.message : "errore"}. Procedo senza.`);
-        }
-      }
-      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone, referenceText, draftText: art.draftText || "" } });
+      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone } });
       const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
       const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
       const slug = art.slug || slugify(art.title);
-      const useRefImages = art.referenceImages && referenceImages.length > 0;
-      // La prima immagine reale (se c'è) va alla copertina; le successive alle figure, nell'ordine.
-      // Quando le immagini reali finiscono, il resto viene "inventato" con foto stock invece di ripetere le stesse.
-      const figImages = useRefImages ? referenceImages.slice(1) : [];
-      const figures: Figure[] = Array.from({ length: n }, (_, i) =>
-        art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: figImages[i] ?? stock(`${slug}-${i + 1}`) },
-      );
-      const cover = art.cover || (useRefImages ? referenceImages[0] : undefined) || stock(slug);
-      upd({ markdown: r.markdown, excerpt: r.excerpt, slug, figures, cover, date: new Date().toISOString().slice(0, 10) });
+      const figures: Figure[] = Array.from({ length: n }, (_, i) => art.figures[i] ?? { id: crypto.randomUUID(), caption: caps[i] ?? "", src: stock(`${slug}-${i + 1}`) });
+      upd({
+        markdown: r.markdown,
+        excerpt: r.excerpt,
+        coverAlt: r.coverAlt || art.coverAlt,
+        slug,
+        figures,
+        cover: art.cover || stock(slug),
+        date: new Date().toISOString().slice(0, 10),
+        translations: {},
+      });
       const w = countWords(r.markdown);
       toast[w >= art.minWords ? "success" : "warning"](`Articolo generato: ${w} parole`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
+    finally { setBusy(""); }
+  };
+
+  const doTranslate = async () => {
+    if (!art.markdown) { toast.error("Genera prima l'articolo"); return; }
+    setBusy("tr");
+    const it = italianTranslation(art, state.products);
+    const payload = JSON.stringify(it);
+    const next: Partial<Record<Lang, Translation>> = { ...art.translations };
+    try {
+      for (const lang of ["en", "de", "es"] as Lang[]) {
+        const t = JSON.parse((await translate({ data: { lang, payload } })).json) as Translation;
+        next[lang] = { ...t, readingTime: it.readingTime };
+        set({ article: { ...art, translations: { ...next } } });
+      }
+      toast.success("Traduzioni EN, DE, ES pronte");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
     finally { setBusy(""); }
   };
@@ -141,31 +149,35 @@ export function ArticlePanel() {
         <div>
           <label htmlFor="title" className="mb-1 block font-bold">Titolo dell'articolo</label>
           <Input id="title" value={art.title} onChange={(e) => upd({ title: e.target.value, slug: slugify(e.target.value) })} className="h-14 border-2 text-xl font-bold" />
-          <p className="mt-1 text-muted-foreground">Indirizzo: <code>/blog/{art.slug || "slug"}</code>{art.number && <> · N. <code>{art.number}</code></>}</p>
+          <p className="mt-1 text-muted-foreground">Cartella: <code>{art.number ? `${art.number}-` : ""}{art.slug || "slug"}/</code></p>
         </div>
         <div>
           <label htmlFor="author" className="mb-1 block font-bold">Autore</label>
           <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="num" className="mb-1 block font-bold">Numero progressivo</label>
+            <Input id="num" value={art.number} onChange={(e) => upd({ number: pad3(Number(e.target.value.replace(/\D/g, "")) || 1) })} className="h-12 border-2 text-lg" />
+          </div>
+          <div>
+            <label htmlFor="author" className="mb-1 block font-bold">Autore</label>
+            <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="cta" className="mb-1 block font-bold">Invito all'azione nell'articolo</label>
+          <select id="cta" value={art.ctaProductId} onChange={(e) => upd({ ctaProductId: e.target.value })} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
+            <option value="">Nessuno</option>
+            {state.products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        </div>
+
         <div>
           <label htmlFor="tone" className="mb-1 block font-bold">Tono</label>
           <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
             {["professionale", "amichevole", "tecnico", "persuasivo", "giornalistico"].map((t) => <option key={t}>{t}</option>)}
           </select>
-        </div>
-        <div className="space-y-2 border-t-2 pt-4">
-          <label htmlFor="draft" className="mb-1 block font-bold">Bozza già scritta (facoltativo)</label>
-          <p className="text-muted-foreground">Incolla qui un testo che hai già preparato: verrà usato come base, riscritto e completato dall'AI fino a raggiungere la lunghezza minima richiesta, mantenendo i contenuti che contiene.</p>
-          <Textarea id="draft" value={art.draftText || ""} onChange={(e) => upd({ draftText: e.target.value })} placeholder="Incolla qui la tua bozza…" className="min-h-40 border-2 text-lg" />
-        </div>
-        <div className="space-y-2 border-t-2 pt-4">
-          <label htmlFor="refurl" className="flex items-center gap-2 font-bold"><Link2 className="size-5" /> Link di riferimento (facoltativo)</label>
-          <p className="text-muted-foreground">Incolla il link di una pagina che tratta già l'argomento (es. la tua landing page): l'AI la userà come spunto, riscrivendo tutto con parole proprie.</p>
-          <Input id="refurl" type="url" value={art.referenceUrl || ""} onChange={(e) => upd({ referenceUrl: e.target.value })} placeholder="https://tuosito.it/pagina-landing" className="h-12 border-2 text-lg" />
-          <label className="flex items-center gap-2 font-semibold">
-            <input type="checkbox" checked={!!art.referenceImages} onChange={(e) => upd({ referenceImages: e.target.checked })} className="size-5" />
-            Usa anche le immagini trovate in quella pagina (invece delle foto stock)
-          </label>
         </div>
       </section>
 
@@ -196,6 +208,10 @@ export function ArticlePanel() {
               <input type="file" accept="image/*" className="sr-only" onChange={async (e) => { const f = e.target.files?.[0]; if (f) upd({ cover: await fileToDataUrl(f) }); }} />
             </label>
           </div>
+        </div>
+        <div>
+          <label htmlFor="coverAlt" className="mb-1 block font-bold">Descrizione della copertina (testo alternativo)</label>
+          <Input id="coverAlt" value={art.coverAlt} onChange={(e) => upd({ coverAlt: e.target.value })} className="h-12 border-2 text-lg" />
         </div>
         <div>
           <label htmlFor="figc" className="mb-1 block font-bold">Figure interne nei paragrafi</label>
@@ -231,6 +247,23 @@ export function ArticlePanel() {
           <Textarea aria-label="Corpo articolo in Markdown" value={art.markdown} onChange={(e) => upd({ markdown: e.target.value })} className="min-h-96 border-2 font-mono text-base" />
         </section>
       )}
+
+      {art.markdown && (
+        <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
+          <h2 className="flex items-center gap-2 text-2xl font-extrabold"><Languages /> 4. Lingue</h2>
+          <div className="flex flex-wrap gap-2">
+            {LANGS.map((l) => (
+              <span key={l} className={`rounded-md border-2 px-3 py-1 font-bold ${l === "it" || art.translations[l] ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+                {LANG_LABEL[l]} {l === "it" || art.translations[l] ? "✓" : "—"}
+              </span>
+            ))}
+          </div>
+          <Button size="lg" className="h-14 w-full text-lg font-bold" onClick={doTranslate} disabled={!!busy}>
+            {busy === "tr" ? <><Loader2 className="animate-spin" /> Traduzione in corso…</> : <><Languages /> Genera traduzioni EN, DE, ES</>}
+          </Button>
+        </section>
+      )}
     </div>
+
   );
 }
