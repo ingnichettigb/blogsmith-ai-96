@@ -5,6 +5,8 @@
  * per esportare/importare uno "scatto" (snapshot) dello stato come file .json.
  */
 
+import type { Product, SponsoredLink, Rotation, State } from "./store";
+
 export type BackupHistoryEntry = { filename: string; savedAt: string };
 
 const HISTORY_KEY = "blogengine-backup-history-v1";
@@ -90,19 +92,16 @@ declare global {
 
 export type SaveResult = "saved" | "downloaded" | "cancelled";
 
-export async function saveBackup(state: unknown, filename: string): Promise<SaveResult> {
-  const json = JSON.stringify(state, null, 2);
-
+async function writeJsonFile(json: string, filename: string, description: string): Promise<SaveResult> {
   if (typeof window !== "undefined" && typeof window.showSaveFilePicker === "function") {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: filename,
-        types: [{ description: "Backup BlogEngine AI", accept: { "application/json": [".json"] } }],
+        types: [{ description, accept: { "application/json": [".json"] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(json);
       await writable.close();
-      addBackupHistoryEntry(filename);
       return "saved";
     } catch (e) {
       // L'utente ha annullato la finestra "Salva con nome"
@@ -120,8 +119,13 @@ export async function saveBackup(state: unknown, filename: string): Promise<Save
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  addBackupHistoryEntry(filename);
   return "downloaded";
+}
+
+export async function saveBackup(state: unknown, filename: string): Promise<SaveResult> {
+  const result = await writeJsonFile(JSON.stringify(state, null, 2), filename, "Backup BlogEngine AI");
+  if (result !== "cancelled") addBackupHistoryEntry(filename);
+  return result;
 }
 
 // -- Ripristino: l'utente sceglie il file .json da ricaricare --------------
@@ -146,4 +150,73 @@ export async function restoreBackup(): Promise<unknown | null> {
     };
     input.click();
   });
+}
+
+// -- Pubblicità (carte sponsorizzate): file AAMMGGHHmm-PUBLICITA-<n>carte.json ----------
+// Salva/ricarica solo la sezione Sponsorizzati (carte, link sorgente, rotazione),
+// separatamente dal backup completo e senza toccare la sua cronologia.
+
+export type AdsFile = {
+  tipo: "blogengine-pubblicita";
+  versione: 1;
+  salvatoIl: string;
+  products: Product[];
+  sponsoredLinks: SponsoredLink[];
+  rotation: Rotation;
+};
+
+export function generateAdsFilename(cardCount: number): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts = `${pad(d.getFullYear() % 100)}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `${ts}-PUBLICITA-${cardCount}carte.json`;
+}
+
+export async function saveAds(data: Pick<State, "products" | "sponsoredLinks" | "rotation">, filename: string): Promise<SaveResult> {
+  const file: AdsFile = {
+    tipo: "blogengine-pubblicita",
+    versione: 1,
+    salvatoIl: new Date().toISOString(),
+    products: data.products,
+    sponsoredLinks: data.sponsoredLinks,
+    rotation: data.rotation,
+  };
+  return writeJsonFile(JSON.stringify(file, null, 2), filename, "Pubblicità BlogEngine AI");
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Legge e valida un file Pubblicità; lancia un errore comprensibile se il file non è quello giusto. */
+export async function restoreAds(): Promise<Pick<State, "products" | "sponsoredLinks" | "rotation"> | null> {
+  const raw = (await restoreBackup()) as Partial<AdsFile> | null;
+  if (raw === null) return null;
+  if (!raw || typeof raw !== "object" || raw.tipo !== "blogengine-pubblicita" || !Array.isArray(raw.products)) {
+    throw new Error("Il file scelto non è un file Pubblicità valido (nome atteso: ...-PUBLICITA-...json)");
+  }
+  const products: Product[] = raw.products
+    .filter((p): p is Product => !!p && typeof p === "object")
+    .map((p) => ({
+      id: str(p.id) || crypto.randomUUID(),
+      title: str(p.title),
+      description: str(p.description),
+      badge: str(p.badge),
+      link: str(p.link),
+      image: str(p.image),
+      ...(p.sourceLinkId ? { sourceLinkId: str(p.sourceLinkId) } : {}),
+    }))
+    .filter((p) => p.title || p.link);
+  const sponsoredLinks: SponsoredLink[] = (Array.isArray(raw.sponsoredLinks) ? raw.sponsoredLinks : [])
+    .filter((l): l is SponsoredLink => !!l && typeof l === "object")
+    .map((l) => ({
+      id: str(l.id) || crypto.randomUUID(),
+      url: str(l.url),
+      ...(l.lastSyncedAt ? { lastSyncedAt: str(l.lastSyncedAt) } : {}),
+      ...(typeof l.cardCount === "number" ? { cardCount: l.cardCount } : {}),
+    }));
+  const r = raw.rotation;
+  const rotation: Rotation = {
+    mode: r?.mode === "random" ? "random" : "sequential",
+    intervalSec: typeof r?.intervalSec === "number" ? Math.min(120, Math.max(3, r.intervalSec)) : 8,
+  };
+  return { products, sponsoredLinks, rotation };
 }

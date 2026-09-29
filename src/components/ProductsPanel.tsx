@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Trash2, Pencil, RefreshCw, Link2, Loader2, ExternalLink, Copy } from "lucide-react";
+import { Plus, Trash2, Pencil, RefreshCw, Link2, Loader2, ExternalLink, Copy, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { fetchSponsoredCards } from "@/lib/sponsored.functions";
+import { generateAdsFilename, saveAds, restoreAds } from "@/lib/backup.functions";
 import { useStore, type Product } from "@/lib/store";
 
 const empty: Omit<Product, "id"> = { title: "", description: "", badge: "", link: "", image: "" };
@@ -97,6 +98,38 @@ export function ProductsPanel() {
     toast.success("Immagine sostituita");
   };
 
+  const [adsBusy, setAdsBusy] = useState<"" | "save" | "restore">("");
+
+  const doSaveAds = async () => {
+    if (state.products.length === 0 && state.sponsoredLinks.length === 0) { toast.error("Non ci sono carte da salvare"); return; }
+    setAdsBusy("save");
+    try {
+      const filename = generateAdsFilename(state.products.length);
+      const result = await saveAds({ products: state.products, sponsoredLinks: state.sponsoredLinks, rotation: state.rotation }, filename);
+      if (result === "saved") toast.success(`Pubblicità salvata come ${filename}`);
+      if (result === "downloaded") toast.success(`Scaricato ${filename}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore durante il salvataggio");
+    } finally {
+      setAdsBusy("");
+    }
+  };
+
+  const doRestoreAds = async () => {
+    setAdsBusy("restore");
+    try {
+      const data = await restoreAds();
+      if (!data) return;
+      if ((state.products.length > 0 || state.sponsoredLinks.length > 0) && !window.confirm(`Sostituire le ${state.products.length} carte attuali con le ${data.products.length} del file?`)) return;
+      set(data);
+      toast.success(`Pubblicità ricaricata: ${data.products.length} carte`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "File non valido");
+    } finally {
+      setAdsBusy("");
+    }
+  };
+
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     if (editing) set({ products: state.products.map((p) => (p.id === editing ? { ...form, id: editing } : p)) });
@@ -157,6 +190,15 @@ export function ProductsPanel() {
 
   return (
     <div className="space-y-6">
+      <section className="space-y-3 rounded-xl border-2 bg-card p-4 sm:p-6">
+        <h2 className="text-2xl font-extrabold">Salva e ricarica le carte</h2>
+        <p className="text-muted-foreground">Salva tutte le carte, i link di origine e la rotazione in un file <code>AAMMGGHHmm-PUBLICITA-…json</code>, così non devi rifarle ogni volta.</p>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Button type="button" size="lg" className="h-12 text-lg font-bold" onClick={doSaveAds} disabled={adsBusy !== ""}><Save className={adsBusy === "save" ? "animate-pulse" : ""} /> Salva Pubblicità</Button>
+          <Button type="button" variant="outline" size="lg" className="h-12 border-2 text-lg font-bold" onClick={doRestoreAds} disabled={adsBusy !== ""}><Upload className={adsBusy === "restore" ? "animate-pulse" : ""} /> Ricarica Pubblicità</Button>
+        </div>
+      </section>
+
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="flex items-center gap-2 text-2xl font-extrabold"><Link2 /> Carte automatiche da una pagina web</h2>
         <p className="text-muted-foreground">Incolla il link di una tua pagina che elenca già delle "carte" (titolo, descrizione, link). Premi "Aggiorna" per leggerle e inserirle in rotazione; puoi aggiungere più link.</p>
