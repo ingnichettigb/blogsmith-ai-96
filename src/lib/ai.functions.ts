@@ -122,7 +122,8 @@ Traduci solo i campi testuali: title, excerpt, text, items, caption. Il campo re
     const end = cleaned.lastIndexOf("}");
     const json = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
     try {
-      return JSON.parse(json) as unknown;
+      JSON.parse(json);
+      return { json };
     } catch {
       throw new Error("La traduzione non è un JSON valido, riprova.");
     }

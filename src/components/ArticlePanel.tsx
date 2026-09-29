@@ -69,7 +69,7 @@ export function ArticlePanel() {
     const next: Partial<Record<Lang, Translation>> = { ...art.translations };
     try {
       for (const lang of ["en", "de", "es"] as Lang[]) {
-        const t = (await translate({ data: { lang, payload } })) as Translation;
+        const t = JSON.parse((await translate({ data: { lang, payload } })).json) as Translation;
         next[lang] = { ...t, readingTime: it.readingTime };
         set({ article: { ...art, translations: { ...next } } });
       }
