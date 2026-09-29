@@ -22,7 +22,7 @@ import { countWords, createBlankArticle, DEFAULT_AUTHOR, slugify, useStore, type
 import { fileToDataUrl } from "./ProductsPanel";
 import { TopicDialog } from "./TopicDialog";
 
-const PRESETS = [800, 1500, 2500];
+const PRESETS = [200, 400, 800, 1500, 2500];
 const stock = (seed: string, w = 1600, h = 900) => `https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}`;
 
 export function ArticlePanel() {
@@ -171,15 +171,15 @@ export function ArticlePanel() {
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="text-2xl font-extrabold">2. Numero minimo di parole <span className="text-destructive">*</span></h2>
-        <div role="radiogroup" aria-label="Parole minime" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div role="radiogroup" aria-label="Parole minime" className="flex gap-1.5 sm:gap-3">
           {PRESETS.map((p) => (
             <button key={p} role="radio" aria-checked={art.minWords === p} onClick={() => upd({ minWords: p })}
-              className={`h-14 rounded-lg border-2 text-lg font-bold ${art.minWords === p ? "bg-primary text-primary-foreground" : "bg-background"}`}>{p}{p === 2500 ? "+" : ""}</button>
+              className={`h-14 min-w-0 flex-1 truncate rounded-lg border-2 px-1 text-sm font-bold sm:px-3 sm:text-lg ${art.minWords === p ? "bg-primary text-primary-foreground" : "bg-background"}`}>{p}{p === 2500 ? "+" : ""}</button>
           ))}
           <button role="radio" aria-checked={custom} onClick={() => upd({ minWords: 1000 })}
-            className={`h-14 rounded-lg border-2 text-lg font-bold ${custom ? "bg-primary text-primary-foreground" : "bg-background"}`}>Personalizzato</button>
+            className={`h-14 min-w-0 flex-1 truncate rounded-lg border-2 px-1 text-sm font-bold sm:px-3 sm:text-lg ${custom ? "bg-primary text-primary-foreground" : "bg-background"}`}>Personalizzato</button>
         </div>
-        {custom && <Input type="number" min={300} max={6000} aria-label="Parole minime personalizzate" value={art.minWords} onChange={(e) => upd({ minWords: Number(e.target.value) || 300 })} className="h-12 border-2 text-lg" />}
+        {custom && <Input type="number" min={200} max={6000} aria-label="Parole minime personalizzate" value={art.minWords} onChange={(e) => upd({ minWords: Number(e.target.value) || 200 })} className="h-12 border-2 text-lg" />}
       </section>
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">

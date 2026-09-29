@@ -70,7 +70,7 @@ export const suggestTopics = createServerFn({ method: "POST" })
 export const generateArticle = createServerFn({ method: "POST" })
   .inputValidator((d: { title: string; minWords: number; figures: number; tone: string; referenceText?: string; draftText?: string }) => ({
     title: String(d.title ?? "").slice(0, 300),
-    minWords: Math.min(6000, Math.max(300, Number(d.minWords) || 800)),
+    minWords: Math.min(6000, Math.max(200, Number(d.minWords) || 800)),
     figures: Math.min(6, Math.max(0, Number(d.figures) || 0)),
     tone: String(d.tone ?? "professionale").slice(0, 50),
     referenceText: d.referenceText ? String(d.referenceText).slice(0, 6000) : "",
