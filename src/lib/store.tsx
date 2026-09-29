@@ -9,6 +9,8 @@ export type Product = {
   badge: string;
   link: string;
   image: string;
+  /** Se presente, indica che la carta è stata estratta automaticamente da un SponsoredLink e viene sostituita ad ogni "Aggiorna". */
+  sourceLinkId?: string;
 };
 
 export type SponsoredLink = {

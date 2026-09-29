@@ -68,20 +68,28 @@ export const suggestTopics = createServerFn({ method: "POST" })
   });
 
 export const generateArticle = createServerFn({ method: "POST" })
-  .inputValidator((d: { title: string; minWords: number; figures: number; tone: string }) => ({
+  .inputValidator((d: { title: string; minWords: number; figures: number; tone: string; referenceText?: string; draftText?: string }) => ({
     title: String(d.title ?? "").slice(0, 300),
     minWords: Math.min(6000, Math.max(200, Number(d.minWords) || 800)),
     figures: Math.min(6, Math.max(0, Number(d.figures) || 0)),
     tone: String(d.tone ?? "professionale").slice(0, 50),
+    referenceText: d.referenceText ? String(d.referenceText).slice(0, 6000) : "",
+    draftText: d.draftText ? String(d.draftText).slice(0, 10_000) : "",
   }))
   .handler(async ({ data }) => {
     if (!data.title) throw new Error("Inserisci un titolo");
+    const draftBlock = data.draftText
+      ? `\n\nBozza già scritta dall'utente: usala come BASE del nuovo articolo. Riscrivila e adattala con parole tue, migliorando struttura, sottotitoli e scorrevolezza, ed espandila fino a raggiungere la lunghezza minima richiesta mantenendo però i contenuti, i fatti e il punto di vista che contiene: non snaturarli, non inventare fatti in contraddizione con essa.\n"""\n${data.draftText}\n"""`
+      : "";
+    const referenceBlock = data.referenceText
+      ? `\n\nContenuto di riferimento fornito dall'utente (una pagina che tratta già l'argomento): usalo${data.draftText ? " come ulteriore fonte di fatti e dettagli oltre alla bozza sopra" : " SOLO come spunto per fatti, punti chiave e taglio dell'argomento"}. Riscrivi tutto con parole tue, in modo originale: non copiare frasi né la struttura testuale.\n"""\n${data.referenceText}\n"""`
+      : "";
     const md = await callAI(
       `Sei un copywriter esperto. Scrivi articoli di blog in italiano, in Markdown, tono ${data.tone}.
 Regole: NON includere il titolo H1. Usa sottotitoli ## e ###, paragrafi, elenchi puntati, grassetti.
 Lunghezza MINIMA obbligatoria: ${data.minWords} parole (superala leggermente).
 Inserisci esattamente ${data.figures} segnaposto per figure interne, ciascuno su una riga isolata nel formato: [[FIGURA: breve descrizione dell'immagine]] distribuiti tra i paragrafi.
-Alla fine NON aggiungere note.`,
+Alla fine NON aggiungere note.${draftBlock}${referenceBlock}`,
       `Titolo: ${data.title}`,
     );
     const meta = await callAI(

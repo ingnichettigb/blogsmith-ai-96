@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { EditableImage } from "./EditableImage";
 import type { Figure } from "@/lib/store";
 
 function inline(t: string, key: string): ReactNode[] {
@@ -13,7 +14,7 @@ function inline(t: string, key: string): ReactNode[] {
   });
 }
 
-export function Markdown({ md, figures }: { md: string; figures: Figure[] }) {
+export function Markdown({ md, figures, onReplaceFigure }: { md: string; figures: Figure[]; onReplaceFigure?: (figureId: string, newSrc: string) => void }) {
   const lines = md.split("\n");
   const out: ReactNode[] = [];
   let list: string[] = [];
@@ -42,7 +43,16 @@ export function Markdown({ md, figures }: { md: string; figures: Figure[] }) {
       const f = figures[figIdx++];
       out.push(
         <figure key={i} className="my-6">
-          {f?.src ? (
+          {f && onReplaceFigure ? (
+            <EditableImage
+              src={f.src}
+              alt={f.caption || fig[1] || ""}
+              label={`figura "${f.caption || fig[1] || ""}"`}
+              className="aspect-video w-full rounded-lg border-2"
+              placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted p-4 text-center text-muted-foreground">Figura: {fig[1]}</div>}
+              onReplace={(src) => onReplaceFigure(f.id, src)}
+            />
+          ) : f?.src ? (
             <img src={f.src} alt={f.caption || fig[1]} className="aspect-video w-full rounded-lg border-2 object-cover" loading="lazy" />
           ) : (
             <div className="grid aspect-video w-full place-items-center rounded-lg border-2 border-dashed bg-muted p-4 text-center text-muted-foreground">Figura: {fig[1]}</div>

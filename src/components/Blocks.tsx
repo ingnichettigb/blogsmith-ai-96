@@ -1,7 +1,8 @@
 import type { Block } from "@/lib/blocks";
 import type { Figure } from "@/lib/store";
+import { EditableImage } from "./EditableImage";
 
-export function Blocks({ content, figures }: { content: Block[]; figures: Figure[] }) {
+export function Blocks({ content, figures, onReplaceFigure }: { content: Block[]; figures: Figure[]; onReplaceFigure?: (figureId: string, newSrc: string) => void }) {
   return (
     <div>
       {content.map((b, i) => {
@@ -23,7 +24,16 @@ export function Blocks({ content, figures }: { content: Block[]; figures: Figure
             const f = figures[idx];
             return (
               <figure key={i} className="my-6">
-                {f?.src ? (
+                {f && onReplaceFigure ? (
+                  <EditableImage
+                    src={f.src}
+                    alt={b.caption}
+                    label={`figura "${b.caption}"`}
+                    className="aspect-video w-full rounded-lg border-2"
+                    placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted p-4 text-center text-muted-foreground">{b.src}</div>}
+                    onReplace={(src) => onReplaceFigure(f.id, src)}
+                  />
+                ) : f?.src ? (
                   <img src={f.src} alt={b.caption} className="aspect-video w-full rounded-lg border-2 object-cover" loading="lazy" />
                 ) : (
                   <div className="grid aspect-video w-full place-items-center rounded-lg border-2 border-dashed bg-muted p-4 text-center text-muted-foreground">{b.src}</div>
