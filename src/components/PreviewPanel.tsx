@@ -64,6 +64,17 @@ export function PreviewPanel() {
       const b = await toWebp(f.src, 1280);
       if (b) dir.file(`figura-${i + 1}.webp`, b);
     }
+    const missing = [
+      ...(a.cover ? [] : ["copertina.webp"]),
+      ...a.figures.map((f, i) => (f.src ? "" : `figura-${i + 1}.webp`)).filter(Boolean),
+    ];
+    if (missing.length) {
+      zip.file(
+        "MANCANTI.txt",
+        `Immagini ancora da inserire (l'articolo le richiama già con questi nomi, copiale nella cartella ${dirName}/ quando sono pronte):\n\n${missing.map((m) => `- ${m}`).join("\n")}\n`,
+      );
+      toast.warning(`Attenzione: mancano ${missing.length} immagini (${missing.join(", ")}). Elenco in MANCANTI.txt`);
+    }
     zip.file("sponsored.json", JSON.stringify({ rotation: state.rotation, products: state.products.map(({ id: _id, ...p }) => p) }, null, 2));
     zip.file("ISTRUZIONI.md", INSTRUCTIONS(dirName));
     const blob = await zip.generateAsync({ type: "blob" });
@@ -101,7 +112,7 @@ export function PreviewPanel() {
             <button role="tab" aria-selected={view === "list"} onClick={() => setView("list")} className={`h-12 rounded-md border-2 font-bold ${view === "list" ? "bg-primary text-primary-foreground" : ""}`}>Vetrina /blog</button>
             <button role="tab" aria-selected={view === "single"} onClick={() => setView("single")} className={`h-12 rounded-md border-2 font-bold ${view === "single" ? "bg-primary text-primary-foreground" : ""}`}>Articolo /blog/slug</button>
           </div>
-          <span className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${words >= a.minWords ? "text-success" : "text-destructive"}`} aria-live="polite">{words} / {a.minWords} parole</span>
+          <span className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${a.manual || words >= a.minWords ? "text-success" : "text-destructive"}`} aria-live="polite">{a.manual ? `${words} parole` : `${words} / ${a.minWords} parole`}</span>
         </div>
         <div role="tablist" aria-label="Lingua" className="grid grid-cols-4 gap-2">
           {LANGS.map((l) => (

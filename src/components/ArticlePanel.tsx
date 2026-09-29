@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2, Eraser, Languages } from "lucide-react";
+import { Lightbulb, Loader2, Sparkles, ImageIcon, Shuffle, Link2, Eraser, Languages, FileCheck2, Images } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { fetchReferencePage } from "@/lib/reference.functions";
 import { countWords, createBlankArticle, DEFAULT_AUTHOR, slugify, useStore, type Figure } from "@/lib/store";
 import { LANGS, LANG_LABEL, type Lang, type Translation } from "@/lib/blocks";
 import { italianTranslation } from "@/lib/article";
+import { ensureFigureMarkers, excerptFromText, syncFigures } from "@/lib/manual";
 import { fileToDataUrl } from "./ProductsPanel";
 import { TopicDialog } from "./TopicDialog";
 
@@ -96,6 +97,7 @@ export function ArticlePanel() {
         slug,
         figures,
         cover,
+        manual: false,
         date: new Date().toISOString().slice(0, 10),
         translations: {},
       });
@@ -103,6 +105,41 @@ export function ArticlePanel() {
       toast[w >= art.minWords ? "success" : "warning"](`Articolo generato: ${w} parole`);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Errore"); }
     finally { setBusy(""); }
+  };
+
+  /** Usa il testo dell'utente così com'è: nessuna chiamata AI, nessuna riscrittura, nessuna foto stock. */
+  const doManual = () => {
+    const text = (art.draftText || "").trim();
+    if (!art.title.trim()) { toast.error("Inserisci prima un titolo"); return; }
+    if (!text) { toast.error("Incolla prima il tuo testo nel campo \"Testo già pronto\""); return; }
+    const md = ensureFigureMarkers(text, figCount);
+    upd({
+      markdown: md,
+      excerpt: art.excerpt || excerptFromText(md),
+      slug: art.slug || slugify(art.title),
+      figures: syncFigures(md, art.figures),
+      manual: true,
+      // se il testo è cambiato le vecchie traduzioni non sono più valide
+      translations: art.markdown === md ? art.translations : {},
+    });
+    toast.success(`Testo salvato senza modifiche: ${countWords(md)} parole. Ora carica le immagini o lascia i segnaposto.`);
+  };
+
+  /** Carica più immagini insieme: vanno negli slot ancora vuoti, in ordine (prima la copertina, poi le figure). */
+  const bulkUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const list = [...files].filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) { toast.error("Seleziona dei file immagine"); return; }
+    const urls = await Promise.all(list.map(fileToDataUrl));
+    let cover = art.cover;
+    const figures = art.figures.map((f) => ({ ...f }));
+    let used = 0;
+    if (!cover && urls[used]) cover = urls[used++]!;
+    for (const f of figures) if (!f.src && urls[used]) f.src = urls[used++]!;
+    upd({ cover, figures });
+    toast[used < urls.length ? "warning" : "success"](
+      used < urls.length ? `${used} immagini inserite, ${urls.length - used} in più ignorate (nessuno slot vuoto)` : `${used} immagini inserite negli slot vuoti`,
+    );
   };
 
   const doTranslate = async () => {
@@ -191,9 +228,13 @@ export function ArticlePanel() {
           </select>
         </div>
         <div className="space-y-2 border-t-2 pt-4">
-          <label htmlFor="draft" className="mb-1 block font-bold">Bozza già scritta (facoltativo)</label>
-          <p className="text-muted-foreground">Incolla qui un testo che hai già preparato: verrà usato come base, riscritto e completato dall'AI fino a raggiungere la lunghezza minima richiesta, mantenendo i contenuti che contiene.</p>
-          <Textarea id="draft" value={art.draftText || ""} onChange={(e) => upd({ draftText: e.target.value })} placeholder="Incolla qui la tua bozza…" className="min-h-40 border-2 text-lg" />
+          <label htmlFor="draft" className="mb-1 block font-bold">Testo già pronto (facoltativo)</label>
+          <p className="text-muted-foreground">Incolla qui l'articolo che hai già scritto. Hai due scelte: <strong>«Usa il mio testo così com'è»</strong> lo salva identico, senza AI e senza consumare crediti; oppure «Genera articolo» lo usa come base e lo fa riscrivere e completare dall'AI.</p>
+          <Textarea id="draft" value={art.draftText || ""} onChange={(e) => upd({ draftText: e.target.value })} placeholder="Incolla qui il tuo testo…" className="min-h-40 border-2 text-lg" />
+          <p className="text-muted-foreground">Puoi indicare tu dove vanno le immagini scrivendo su una riga da sola <code>[[FIGURA: descrizione]]</code>. Se non ne scrivi, li inserisco io tra i paragrafi (vedi «Figure interne» qui sotto) come segnaposto da sostituire.</p>
+          <Button size="lg" variant="secondary" className="h-14 w-full border-2 text-lg font-bold" onClick={doManual} disabled={!!busy}>
+            <FileCheck2 /> Usa il mio testo così com'è (senza AI)
+          </Button>
         </div>
         <div className="space-y-2 border-t-2 pt-4">
           <label htmlFor="refurl" className="flex items-center gap-2 font-bold"><Link2 className="size-5" /> Link di riferimento (facoltativo)</label>
@@ -242,9 +283,13 @@ export function ArticlePanel() {
           <label htmlFor="figc" className="mb-1 block font-bold">Figure interne nei paragrafi</label>
           <Input id="figc" type="number" min={0} max={6} value={figCount} onChange={(e) => setFigCount(Number(e.target.value))} className="h-12 border-2 text-lg sm:w-40" />
         </div>
+        <label className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border-2 px-4 font-semibold hover:bg-secondary sm:w-auto">
+          <Images className="size-5" /> Carica più immagini insieme (negli slot vuoti, in ordine)
+          <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void bulkUpload(e.target.files); e.target.value = ""; }} />
+        </label>
         {art.figures.map((f, i) => (
           <div key={f.id} className="flex gap-3 rounded-lg border-2 p-3">
-            <img src={f.src} alt="" className="h-20 w-32 shrink-0 rounded object-cover" />
+            {f.src ? <img src={f.src} alt="" className="h-20 w-32 shrink-0 rounded object-cover" /> : <div className="grid h-20 w-32 shrink-0 place-items-center rounded border-2 border-dashed bg-muted p-1 text-center text-xs text-muted-foreground">Da sostituire</div>}
             <div className="min-w-0 flex-1 space-y-2">
               <Input aria-label={`Didascalia figura ${i + 1}`} value={f.caption} onChange={(e) => upd({ figures: art.figures.map((x) => (x.id === f.id ? { ...x, caption: e.target.value } : x)) })} className="h-11 border-2" />
               <div className="flex flex-wrap gap-2">
@@ -266,10 +311,10 @@ export function ArticlePanel() {
         <section className="space-y-3 rounded-xl border-2 bg-card p-4 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-extrabold">Testo (modificabile)</h2>
-            <span className={`rounded-md border-2 px-3 py-1 font-bold ${words >= art.minWords ? "text-success" : "text-destructive"}`}>{words} / {art.minWords}</span>
+            <span className={`rounded-md border-2 px-3 py-1 font-bold ${art.manual || words >= art.minWords ? "text-success" : "text-destructive"}`}>{art.manual ? `${words} parole` : `${words} / ${art.minWords}`}</span>
           </div>
           <Textarea aria-label="Estratto" value={art.excerpt} onChange={(e) => upd({ excerpt: e.target.value })} className="border-2 text-lg" />
-          <Textarea aria-label="Corpo articolo in Markdown" value={art.markdown} onChange={(e) => upd({ markdown: e.target.value })} className="min-h-96 border-2 font-mono text-base" />
+          <Textarea aria-label="Corpo articolo in Markdown" value={art.markdown} onChange={(e) => upd({ markdown: e.target.value, figures: syncFigures(e.target.value, art.figures) })} className="min-h-96 border-2 font-mono text-base" />
         </section>
       )}
 

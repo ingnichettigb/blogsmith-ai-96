@@ -42,6 +42,8 @@ export type Article = {
   referenceImages: boolean;
   /** Bozza già scritta dall'utente, usata come base per la generazione AI. */
   draftText: string;
+  /** true = testo scritto dall'utente e usato così com'è (nessuna AI): il minimo di parole è solo informativo. */
+  manual?: boolean;
   ctaProductId: string;
   translations: Partial<Record<Lang, Translation>>;
 };
@@ -83,6 +85,7 @@ export function createBlankArticle(): Article {
     referenceUrl: "",
     referenceImages: false,
     draftText: "",
+    manual: false,
     coverAlt: "",
     ctaProductId: "",
     translations: {},
