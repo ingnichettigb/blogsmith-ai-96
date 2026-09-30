@@ -43,7 +43,7 @@ export function ArticlePanel() {
   const translate = useServerFn(translateArticle);
   const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
-  const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && !art.topic && art.figures.length === 0 && art.author === DEFAULT_AUTHOR;
+  const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && !(art.topics ?? []).length && art.figures.length === 0 && art.author === DEFAULT_AUTHOR;
 
   const doReset = () => {
     upd(createBlankArticle());
@@ -145,13 +145,13 @@ export function ArticlePanel() {
   const doTranslate = async () => {
     if (!art.markdown) { toast.error("Genera prima l'articolo"); return; }
     setBusy("tr");
-    const it = italianTranslation(art, state.products);
+    const it = italianTranslation(art);
     const payload = JSON.stringify(it);
     const next: Partial<Record<Lang, Translation>> = { ...art.translations };
     try {
       for (const lang of ["en", "de", "es"] as Lang[]) {
-        const t = JSON.parse((await translate({ data: { lang, payload } })).json) as Translation;
-        next[lang] = { ...t, readingTime: it.readingTime };
+      const t = JSON.parse((await translate({ data: { lang, payload } })).json) as Translation;
+        next[lang] = { ...t, readingTime: it.readingTime, figures: it.figures };
         set({ article: { ...art, translations: { ...next } } });
       }
       toast.success("Traduzioni EN, DE, ES pronte");
@@ -212,13 +212,6 @@ export function ArticlePanel() {
         <div>
           <label htmlFor="author" className="mb-1 block font-bold">Autore</label>
           <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
-        </div>
-        <div>
-          <label htmlFor="cta" className="mb-1 block font-bold">Invito all'azione nell'articolo</label>
-          <select id="cta" value={art.ctaProductId} onChange={(e) => upd({ ctaProductId: e.target.value })} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
-            <option value="">Nessuno</option>
-            {state.products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
-          </select>
         </div>
 
         <div>
