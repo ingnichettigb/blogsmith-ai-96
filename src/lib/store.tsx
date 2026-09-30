@@ -26,8 +26,8 @@ export type Figure = { id: string; caption: string; src: string };
 export type Article = {
   /** Numero progressivo (es. "001"), assegnato al primo "Salva" e poi mantenuto fisso per quell'articolo. */
   number: string;
-  /** Argomento scelto dall'archivio topics (o vuoto se non ancora scelto). */
-  topic: string;
+  /** Argomenti scelti dall'archivio (uno o più), esportati in article.json. */
+  topics: string[];
   title: string;
   slug: string;
   excerpt: string;
