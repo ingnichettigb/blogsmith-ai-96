@@ -5,9 +5,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EditableImage } from "./EditableImage";
 import { Blocks } from "./Blocks";
-import { countWords, useStore, type Article, type Product, type Rotation } from "@/lib/store";
-import { LANGS, LANG_LABEL, blockWords, type Lang } from "@/lib/blocks";
-import { articleJson, folderName, italianTranslation, toWebp } from "@/lib/article";
+import { useStore, type Article, type Product, type Rotation } from "@/lib/store";
+import { COVER_FILE, LANGS, LANG_LABEL, figureFile, markdownToBlocks, mdWords, type Lang } from "@/lib/blocks";
+import { articleJson, folderName, toJpeg } from "@/lib/article";
 
 function SponsoredSidebar({ products, rotation }: { products: Product[]; rotation: Rotation }) {
   const [i, setI] = useState(0);
@@ -32,11 +32,11 @@ function SponsoredSidebar({ products, rotation }: { products: Product[]; rotatio
 
 const INSTRUCTIONS = (dir: string) => `# Installazione rapida
 
-1. Copia l'intera cartella \`${dir}/\` nel repository GitHub del sito, dentro la cartella degli articoli del blog.
-2. La cartella contiene tutto: \`article.json\` (testi e metadati nelle 4 lingue), \`copertina.webp\` e le eventuali \`figura-N.webp\`.
-3. Le immagini sono richiamate con il nome file relativo, quindi non serve modificare nulla.
-4. Copia \`sponsored.json\` nella configurazione del sito per la fascia laterale destra a rotazione.
-5. Se il sito non ha ancora il blog, usa il prompt generato in "Analisi sito" per creare /blog e /blog/[slug].
+1. Copia l'intera cartella \`${dir}/\` nella cartella degli articoli del blog del sito.
+2. La cartella contiene solo: \`article.json\` (testi e metadati nelle lingue generate), \`${COVER_FILE}\` e le eventuali \`figura-N.jpg\`.
+3. Le immagini sono file reali richiamati con il nome relativo dentro il markdown: non serve modificare nulla.
+4. Le schede sponsorizzate NON sono incluse: la fascia laterale è gestita in modo centralizzato dal sito.
+5. Gli argomenti ("topics") servono al sito per l'indice e i filtri della vetrina /blog.
 `;
 
 export function PreviewPanel() {
@@ -45,9 +45,10 @@ export function PreviewPanel() {
   const upd = (p: Partial<Article>) => set({ article: { ...a, ...p } });
   const [view, setView] = useState<"list" | "single">("single");
   const [lang, setLang] = useState<Lang>("it");
-  const doc = useMemo(() => articleJson(a, state.products), [a, state.products]);
+  const doc = useMemo(() => articleJson(a), [a]);
   const t = doc.translations[lang] ?? doc.translations.it!;
-  const words = lang === "it" ? countWords(a.markdown) : blockWords(t.content);
+  const blocks = useMemo(() => markdownToBlocks(t.markdown), [t.markdown]);
+  const words = mdWords(t.markdown);
 
   const exportZip = async () => {
     if (!a.markdown) { toast.error("Genera prima un articolo"); return; }
@@ -55,28 +56,17 @@ export function PreviewPanel() {
     const zip = new JSZip();
     const dir = zip.folder(dirName)!;
     dir.file("article.json", JSON.stringify(doc, null, 2));
+    const missing: string[] = [];
     if (a.cover) {
-      const c = await toWebp(a.cover, 1600);
-      if (c) dir.file("copertina.webp", c);
-    }
+      const c = await toJpeg(a.cover, 1600);
+      if (c) dir.file(COVER_FILE, c); else missing.push(COVER_FILE);
+    } else missing.push(COVER_FILE);
     for (let i = 0; i < a.figures.length; i++) {
       const f = a.figures[i]!;
-      const b = await toWebp(f.src, 1280);
-      if (b) dir.file(`figura-${i + 1}.webp`, b);
+      const b = f.src ? await toJpeg(f.src, 1280) : null;
+      if (b) dir.file(figureFile(i + 1), b); else missing.push(figureFile(i + 1));
     }
-    const missing = [
-      ...(a.cover ? [] : ["copertina.webp"]),
-      ...a.figures.map((f, i) => (f.src ? "" : `figura-${i + 1}.webp`)).filter(Boolean),
-    ];
-    if (missing.length) {
-      zip.file(
-        "MANCANTI.txt",
-        `Immagini ancora da inserire (l'articolo le richiama già con questi nomi, copiale nella cartella ${dirName}/ quando sono pronte):\n\n${missing.map((m) => `- ${m}`).join("\n")}\n`,
-      );
-      toast.warning(`Attenzione: mancano ${missing.length} immagini (${missing.join(", ")}). Elenco in MANCANTI.txt`);
-    }
-    zip.file("sponsored.json", JSON.stringify({ rotation: state.rotation, products: state.products.map(({ id: _id, ...p }) => p) }, null, 2));
-    zip.file("ISTRUZIONI.md", INSTRUCTIONS(dirName));
+    if (missing.length) toast.warning(`Mancano ${missing.length} immagini: ${missing.join(", ")}`);
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement("a"), { href: url, download: `${dirName}.zip` }).click();
@@ -89,20 +79,6 @@ export function PreviewPanel() {
     Object.assign(document.createElement("a"), { href: url, download: name }).click();
     URL.revokeObjectURL(url);
   };
-
-  const markdownExport = () =>
-    `# ${t.title}\n\n` +
-    t.content
-      .map((b) =>
-        b.type === "heading2" ? `## ${b.text}`
-        : b.type === "heading3" ? `### ${b.text}`
-        : b.type === "quote" ? `> ${b.text}`
-        : b.type === "list" ? b.items.map((x) => `- ${x}`).join("\n")
-        : b.type === "image" ? `![${b.caption}](${b.src})`
-        : b.type === "cta" ? `[${b.text}](${b.link})`
-        : b.text,
-      )
-      .join("\n\n");
 
   return (
     <div className="space-y-6">
@@ -131,6 +107,14 @@ export function PreviewPanel() {
         ) : view === "list" ? (
           <div>
             <h1 className="mb-6 text-4xl font-extrabold">Blog</h1>
+            {state.topics.length > 0 && (
+              <div className="mb-6 flex flex-wrap gap-2">
+                <span className="rounded-md border-2 bg-primary px-3 py-1 font-bold text-primary-foreground">Tutti</span>
+                {state.topics.map((x) => (
+                  <span key={x} className={`rounded-md border-2 px-3 py-1 font-bold ${t.topics.includes(x) ? "" : "text-muted-foreground"}`}>{x}</span>
+                ))}
+              </div>
+            )}
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               <article className="overflow-hidden rounded-xl border-2 bg-card">
                 <EditableImage
@@ -145,6 +129,11 @@ export function PreviewPanel() {
                   <time className="text-muted-foreground">{a.date} · {t.readingTime}</time>
                   <h2 className="mt-1 text-xl font-bold">{t.title}</h2>
                   <p className="mt-2 text-muted-foreground">{t.excerpt}</p>
+                  {t.topics.length > 0 && (
+                    <p className="mt-2 flex flex-wrap gap-1">
+                      {t.topics.map((x) => <span key={x} className="rounded bg-secondary px-2 py-0.5 text-sm font-bold">{x}</span>)}
+                    </p>
+                  )}
                   <button onClick={() => setView("single")} className="mt-3 font-bold text-primary underline underline-offset-4">Leggi →</button>
                 </div>
               </article>
@@ -161,9 +150,14 @@ export function PreviewPanel() {
                 placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted text-muted-foreground">Nessuna copertina</div>}
                 onReplace={(src) => upd({ cover: src })}
               />
-              <h1 className="mt-6 text-3xl font-extrabold sm:text-4xl">{t.title}</h1>
+              {t.topics.length > 0 && (
+                <p className="mt-4 flex flex-wrap gap-2">
+                  {t.topics.map((x) => <span key={x} className="rounded bg-secondary px-2 py-0.5 font-bold">{x}</span>)}
+                </p>
+              )}
+              <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{t.title}</h1>
               <p className="text-muted-foreground">{a.date} · {a.author} · {t.readingTime}</p>
-              <Blocks content={t.content} figures={a.figures} onReplaceFigure={(id, src) => upd({ figures: a.figures.map((f) => (f.id === id ? { ...f, src } : f)) })} />
+              <Blocks content={blocks} figures={a.figures} onReplaceFigure={(id, src) => upd({ figures: a.figures.map((f) => (f.id === id ? { ...f, src } : f)) })} />
             </article>
             <aside className="lg:sticky lg:top-40 lg:self-start">
               <SponsoredSidebar products={state.products} rotation={state.rotation} />
@@ -174,12 +168,13 @@ export function PreviewPanel() {
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
         <h2 className="text-2xl font-extrabold">Esporta</h2>
+        <p className="text-muted-foreground">Il pacchetto contiene solo la cartella dell'articolo con <code>article.json</code> e le immagini in .jpg. Nessuna scheda pubblicitaria viene inclusa.</p>
         <div className="grid gap-3 sm:grid-cols-3">
           <Button size="lg" className="h-14 text-lg font-bold" onClick={exportZip}><Download /> Cartella .zip</Button>
-          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl(`${folderName(a)}-${lang}.md`, markdownExport(), "text/markdown")}><FileText /> Markdown ({LANG_LABEL[lang]})</Button>
+          <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl(`${folderName(a)}-${lang}.md`, `# ${t.title}\n\n${t.markdown}`, "text/markdown")}><FileText /> Markdown ({LANG_LABEL[lang]})</Button>
           <Button size="lg" variant="outline" className="h-14 border-2 text-lg" disabled={!a.markdown} onClick={() => dl("article.json", JSON.stringify(doc, null, 2), "application/json")}><FileJson /> article.json</Button>
         </div>
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-base">{INSTRUCTIONS(a.slug ? folderName(a) : "001-slug")}</pre>
+        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-base">{INSTRUCTIONS(folderName(a))}</pre>
       </section>
     </div>
   );

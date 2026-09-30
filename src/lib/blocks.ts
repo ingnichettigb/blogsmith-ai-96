@@ -11,17 +11,27 @@ export type Lang = "it" | "en" | "de" | "es";
 export const LANGS: Lang[] = ["it", "en", "de", "es"];
 export const LANG_LABEL: Record<Lang, string> = { it: "Italiano", en: "English", de: "Deutsch", es: "Español" };
 
+/** Estensione fisica delle immagini esportate (standard CorporateBoostService.eu). */
+export const IMG_EXT = "jpg";
+export const COVER_FILE = `copertina.${IMG_EXT}`;
+export const figureFile = (i: number) => `figura-${i}.${IMG_EXT}`;
+
+export type FigureRef = { id: string; src: string; caption: string };
+
+/** Traduzione conforme allo standard: markdown standard + metadati. */
 export type Translation = {
   title: string;
   excerpt: string;
   readingTime: string;
-  content: Block[];
+  topics: string[];
+  markdown: string;
+  figures: FigureRef[];
 };
 
 const clean = (s: string) =>
   s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`/g, "").trim();
 
-/** Converte il markdown generato in blocchi tipizzati conformi allo standard. */
+/** Converte il markdown in blocchi, solo per l'anteprima a schermo. */
 export function markdownToBlocks(md: string): Block[] {
   const out: Block[] = [];
   let list: string[] = [];
@@ -32,7 +42,8 @@ export function markdownToBlocks(md: string): Block[] {
   };
   for (const raw of md.split("\n")) {
     const line = raw.trim();
-    const fig = line.match(/^\[\[FIGURA:\s*(.+?)\]\]$/);
+    const img = line.match(/^!\[(.*?)\]\((.+?)\)$/);
+    const legacy = line.match(/^\[\[FIGURA:\s*(.+?)\]\]$/);
     const li = line.match(/^(?:[-*]|\d+\.)\s+(.*)/);
     if (li) {
       list.push(clean(li[1] ?? ""));
@@ -40,9 +51,12 @@ export function markdownToBlocks(md: string): Block[] {
     }
     flush();
     if (!line) continue;
-    if (fig) {
+    if (img) {
       figIdx += 1;
-      out.push({ type: "image", src: `figura-${figIdx}.webp`, caption: clean(fig[1] ?? "") });
+      out.push({ type: "image", src: img[2] ?? figureFile(figIdx), caption: clean(img[1] ?? "") });
+    } else if (legacy) {
+      figIdx += 1;
+      out.push({ type: "image", src: figureFile(figIdx), caption: clean(legacy[1] ?? "") });
     } else if (line.startsWith("### ")) out.push({ type: "heading3", text: clean(line.slice(4)) });
     else if (line.startsWith("## ")) out.push({ type: "heading2", text: clean(line.slice(3)) });
     else if (line.startsWith("# ")) out.push({ type: "heading2", text: clean(line.slice(2)) });
@@ -60,6 +74,9 @@ export function blockWords(content: Block[]): number {
   return text.split(/\s+/).filter((w) => /\p{L}|\d/u.test(w)).length;
 }
 
-export const readingTime = (content: Block[]) => `${Math.max(1, Math.round(blockWords(content) / 200))} min`;
+/** Parole di un testo markdown (immagini e marcatori esclusi). */
+export const mdWords = (md: string) => blockWords(markdownToBlocks(md));
+
+export const readingTime = (md: string) => `${Math.max(1, Math.round(mdWords(md) / 200))} min`;
 
 export const pad3 = (n: number) => String(Math.max(1, Math.min(999, n))).padStart(3, "0");

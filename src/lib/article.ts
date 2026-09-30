@@ -1,50 +1,85 @@
-import { markdownToBlocks, readingTime, type Block, type Lang, type Translation } from "./blocks";
-import type { Article, Product } from "./store";
+import { COVER_FILE, figureFile, readingTime, type FigureRef, type Lang, type Translation } from "./blocks";
+import type { Article } from "./store";
 
-/** Versione italiana (fonte) dell'articolo, in blocchi conformi allo standard. */
-export function italianTranslation(a: Article, products: Product[]): Translation {
-  const content: Block[] = markdownToBlocks(a.markdown);
-  const p = products.find((x) => x.id === a.ctaProductId);
-  if (p) content.push({ type: "cta", text: p.title, link: p.link });
-  return { title: a.title, excerpt: a.excerpt, readingTime: readingTime(content), content };
+/**
+ * Markdown conforme allo standard: i segnaposto [[FIGURA: ...]] diventano
+ * immagini markdown con il nome del file fisico (figura-1.jpg, figura-2.jpg...).
+ */
+export function normalizedMarkdown(a: Article): string {
+  let i = 0;
+  return a.markdown
+    .replace(/^\s*\[\[FIGURA:\s*(.+?)\]\]\s*$/gm, (_m, cap: string) => {
+      const caption = (a.figures[i]?.caption || cap || "").trim();
+      i += 1;
+      return `![${caption}](${figureFile(i)})`;
+    })
+    .trim();
 }
 
-export const folderName = (a: Article) => `${a.number}-${a.slug}`;
+export function figureRefs(a: Article): FigureRef[] {
+  return a.figures.map((f, i) => ({ id: `figura-${i + 1}`, src: figureFile(i + 1), caption: f.caption }));
+}
 
-export function articleJson(a: Article, products: Product[]) {
-  const it = italianTranslation(a, products);
+/** Versione italiana (fonte) dell'articolo. */
+export function italianTranslation(a: Article): Translation {
+  const markdown = normalizedMarkdown(a);
+  return {
+    title: a.title,
+    excerpt: a.excerpt,
+    readingTime: readingTime(markdown),
+    topics: a.topics ?? [],
+    markdown,
+    figures: figureRefs(a),
+  };
+}
+
+export const folderName = (a: Article) => `${a.number || "001"}-${a.slug || "slug"}`;
+
+export function articleJson(a: Article) {
+  const it = italianTranslation(a);
   const translations: Partial<Record<Lang, Translation>> = { it };
   for (const lang of ["en", "de", "es"] as Lang[]) {
     const t = a.translations[lang];
-    if (t) translations[lang] = { ...t, readingTime: it.readingTime };
+    if (t) translations[lang] = { ...t, readingTime: it.readingTime, figures: it.figures };
   }
   return {
-    number: a.number,
+    number: a.number || "001",
     slug: folderName(a),
     date: a.date,
     author: a.author,
-    cover: "copertina.webp",
+    cover: COVER_FILE,
     coverAlt: a.coverAlt,
     translations,
   };
 }
 
-/** Converte una immagine in WebP 16:9 (minimo 1280x720) tramite canvas. */
-export async function toWebp(src: string, w = 1280): Promise<Blob | null> {
+/**
+ * Converte una immagine in JPEG 16:9 (minimo 1280x720) tramite canvas,
+ * abbassando la qualità finché il file non sta sotto il limite richiesto.
+ */
+export async function toJpeg(src: string, w = 1600, maxBytes = 300 * 1024): Promise<Blob | null> {
   try {
     const res = await fetch(src);
     const bitmap = await createImageBitmap(await res.blob());
-    const h = Math.round((w * 9) / 16);
+    const width = Math.max(1280, w);
+    const height = Math.round((width * 9) / 16);
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    const scale = Math.max(w / bitmap.width, h / bitmap.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    const scale = Math.max(width / bitmap.width, height / bitmap.height);
     const dw = bitmap.width * scale;
     const dh = bitmap.height * scale;
-    ctx.drawImage(bitmap, (w - dw) / 2, (h - dh) / 2, dw, dh);
-    return await new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/webp", 0.9));
+    ctx.drawImage(bitmap, (width - dw) / 2, (height - dh) / 2, dw, dh);
+    let blob: Blob | null = null;
+    for (const q of [0.9, 0.8, 0.7, 0.6, 0.5, 0.4]) {
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), "image/jpeg", q));
+      if (blob && blob.size <= maxBytes) return blob;
+    }
+    return blob;
   } catch {
     return null;
   }

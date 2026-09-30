@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Pencil, Plus, Tag, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useStore } from "@/lib/store";
 
 /**
- * Casella "Argomento" per l'articolo corrente: apre un archivio persistente
- * di argomenti (condiviso tra tutti gli articoli) con selezione rapida,
- * creazione di un nuovo argomento, rinomina e rimozione.
+ * Casella "Argomenti" dell'articolo: apre un archivio persistente condiviso
+ * tra tutti gli articoli, con spunta multipla, creazione, rinomina e rimozione.
  */
 export function TopicDialog() {
   const { state, set } = useStore();
@@ -18,17 +17,11 @@ export function TopicDialog() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
-  const topic = state.article.topic;
+  const selected = state.article.topics ?? [];
+  const setSelected = (topics: string[]) => set({ article: { ...state.article, topics } });
 
-  const selectTopic = (t: string) => {
-    set({ article: { ...state.article, topic: t } });
-    setOpen(false);
-  };
-
-  const clearTopic = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    set({ article: { ...state.article, topic: "" } });
-  };
+  const toggle = (t: string) =>
+    setSelected(selected.includes(t) ? selected.filter((x) => x !== t) : [...selected, t]);
 
   const addTopic = () => {
     const t = newTopic.trim();
@@ -37,15 +30,14 @@ export function TopicDialog() {
       toast.error("Questo argomento esiste già");
       return;
     }
-    set({ topics: [...state.topics, t] });
+    set({ topics: [...state.topics, t], article: { ...state.article, topics: [...selected, t] } });
     setNewTopic("");
-    selectTopic(t);
   };
 
   const removeTopic = (t: string) => {
     set({
       topics: state.topics.filter((x) => x !== t),
-      article: state.article.topic === t ? { ...state.article, topic: "" } : state.article,
+      article: { ...state.article, topics: selected.filter((x) => x !== t) },
     });
   };
 
@@ -64,7 +56,7 @@ export function TopicDialog() {
     }
     set({
       topics: state.topics.map((x) => (x === oldT ? t : x)),
-      article: state.article.topic === oldT ? { ...state.article, topic: t } : state.article,
+      article: { ...state.article, topics: selected.map((x) => (x === oldT ? t : x)) },
     });
   };
 
@@ -75,31 +67,21 @@ export function TopicDialog() {
         onClick={() => setOpen(true)}
         className="flex w-full items-center justify-between gap-2 rounded-lg border-2 bg-accent px-4 py-3 text-left font-bold text-accent-foreground hover:opacity-90"
       >
-        <span className="flex items-center gap-2 truncate">
+        <span className="flex min-w-0 items-center gap-2">
           <Tag className="size-5 shrink-0" />
-          {topic || "Nessun argomento selezionato — Clicca per scegliere"}
+          <span className="truncate">{selected.length ? selected.join(" · ") : "Nessun argomento selezionato — Clicca per scegliere"}</span>
         </span>
-        {topic && (
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label="Rimuovi argomento dall'articolo"
-            className="shrink-0 rounded p-1 hover:bg-black/10"
-            onClick={clearTopic}
-            onKeyDown={(e) => { if (e.key === "Enter") clearTopic(e as unknown as React.MouseEvent); }}
-          >
-            <X className="size-4" />
-          </span>
-        )}
+        {selected.length > 0 && <span className="shrink-0 rounded bg-primary px-2 py-0.5 text-primary-foreground">{selected.length}</span>}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Argomento dell'articolo</DialogTitle>
+            <DialogTitle>Argomenti dell'articolo</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
+            <p className="text-muted-foreground">Spunta uno o più argomenti: finiranno nell'articolo e nell'indice del blog.</p>
             {state.topics.length === 0 ? (
               <p className="text-muted-foreground">Nessun argomento in archivio ancora. Creane uno qui sotto.</p>
             ) : (
@@ -119,9 +101,9 @@ export function TopicDialog() {
                       </>
                     ) : (
                       <>
-                        <button type="button" onClick={() => selectTopic(t)} className="flex min-w-0 flex-1 items-center gap-2 text-left font-semibold">
-                          <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${topic === t ? "bg-primary text-primary-foreground" : ""}`}>
-                            {topic === t && <Check className="size-3.5" />}
+                        <button type="button" role="checkbox" aria-checked={selected.includes(t)} onClick={() => toggle(t)} className="flex min-w-0 flex-1 items-center gap-2 text-left font-semibold">
+                          <span className={`flex size-6 shrink-0 items-center justify-center rounded border-2 ${selected.includes(t) ? "bg-primary text-primary-foreground" : ""}`}>
+                            {selected.includes(t) && <Check className="size-4" />}
                           </span>
                           <span className="truncate">{t}</span>
                         </button>
@@ -142,12 +124,14 @@ export function TopicDialog() {
                   value={newTopic}
                   onChange={(e) => setNewTopic(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") addTopic(); }}
-                  placeholder="Es. Gestione credenziali"
+                  placeholder="Es. FAT e Collaudi"
                   className="h-11 flex-1 border-2"
                 />
-                <Button className="h-11 shrink-0 font-bold" disabled={!newTopic.trim()} onClick={addTopic}><Plus /> Aggiungi e seleziona</Button>
+                <Button className="h-11 shrink-0 font-bold" disabled={!newTopic.trim()} onClick={addTopic}><Plus /> Aggiungi</Button>
               </div>
             </div>
+
+            <Button className="h-12 w-full text-lg font-bold" onClick={() => setOpen(false)}>Fatto</Button>
           </div>
         </DialogContent>
       </Dialog>
