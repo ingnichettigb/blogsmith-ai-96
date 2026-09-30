@@ -72,7 +72,7 @@ export const countWords = (s: string) =>
 export function createBlankArticle(): Article {
   return {
     number: "",
-    topic: "",
+    topics: [],
     title: "",
     slug: "",
     excerpt: "",
@@ -125,7 +125,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const p = JSON.parse(raw) as Partial<State>;
-        setState({ ...initial, ...p, article: { ...initial.article, ...(p.article ?? {}) } });
+        const saved = (p.article ?? {}) as Partial<Article> & { topic?: string };
+        // Compatibilità con i salvataggi precedenti: singolo "topic" -> elenco "topics".
+        const topics = Array.isArray(saved.topics) ? saved.topics : saved.topic ? [saved.topic] : [];
+        setState({ ...initial, ...p, article: { ...initial.article, ...saved, topics } });
       }
     } catch {
       /* ignore */
