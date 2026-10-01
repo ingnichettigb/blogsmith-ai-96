@@ -94,7 +94,7 @@ Alla fine NON aggiungere note.${draftBlock}${referenceBlock}`,
     );
     const meta = await callAI(
       `Rispondi SOLO con un JSON valido, senza testo attorno, nel formato {"excerpt":"...","coverAlt":"..."}.
-"excerpt": riassunto in italiano di massimo 30 parole. "coverAlt": testo alternativo dell'immagine di copertina, massimo 15 parole.`,
+"excerpt": riassunto in italiano di 2-3 frasi, MASSIMO 180 caratteri. "coverAlt": testo alternativo dell'immagine di copertina, massimo 15 parole.`,
       `Titolo: ${data.title}\n\n${md.slice(0, 3000)}`,
     );
     let excerpt = "";
@@ -121,8 +121,9 @@ export const translateArticle = createServerFn({ method: "POST" })
     const raw = await callAI(
       `Sei un traduttore professionale. Traduci in ${target} il JSON dell'articolo che ricevi.
 Rispondi SOLO con un JSON valido, senza testo attorno e senza blocchi di codice.
-Mantieni ESATTAMENTE la stessa struttura e lo stesso ordine dei blocchi, gli stessi campi "type", i valori "src" e i link invariati.
-Traduci solo i campi testuali: title, excerpt, text, items, caption. Il campo readingTime deve restare identico.`,
+Mantieni ESATTAMENTE la stessa struttura e gli stessi campi: title, excerpt, readingTime, topics, markdown, figures.
+Nel campo "markdown" conserva identica la formattazione Markdown (## ### ** elenchi) e i riferimenti alle immagini ![didascalia tradotta](figura-N.jpg): i nomi dei file NON vanno mai tradotti o modificati.
+Traduci: title, excerpt, topics, il testo del markdown e le caption delle figures. I campi readingTime, src e id restano identici.`,
       data.payload,
     );
     const cleaned = raw.replace(/^```(?:json)?/m, "").replace(/```\s*$/m, "").trim();
