@@ -27,6 +27,21 @@ export type SocialPosts = {
   linkedin?: string;
   facebook?: string;
   telegram?: string;
+  /** Immagini scelte per ciascun social (src copertina o figura) */
+  linkedinImage?: string;
+  facebookImage?: string;
+  telegramImage?: string;
+  /** Video allegati per ciascun social (data URL) */
+  linkedinVideo?: string;
+  facebookVideo?: string;
+  telegramVideo?: string;
+  linkedinVideoName?: string;
+  facebookVideoName?: string;
+  telegramVideoName?: string;
+  /** Prompt per generatori video AI esterni (Runway, Kling, Sora, Luma) */
+  linkedinVideoPrompt?: string;
+  facebookVideoPrompt?: string;
+  telegramVideoPrompt?: string;
 };
 
 export type Article = {
@@ -52,7 +67,7 @@ export type Article = {
   manual?: boolean;
   ctaProductId: string;
   translations: Partial<Record<Lang, Translation>>;
-  /** Post pronti per i canali social (generati su richiesta o scritti a mano). */
+  /** Post e media pronti per i canali social. */
   socialPosts?: SocialPosts;
 };
 
