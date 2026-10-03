@@ -194,7 +194,6 @@ export const generateArticleImage = createServerFn({ method: "POST" })
 
 /**
  * Genera un post social ottimizzato (LinkedIn, Facebook o Telegram) basato sull'articolo.
- * Chiamato solo per la specifica piattaforma richiesta, zero spreco di crediti.
  */
 export const generateSocialPost = createServerFn({ method: "POST" })
   .inputValidator((d: { platform: string; title: string; excerpt?: string; markdown?: string; topics?: string[] }) => ({
@@ -252,4 +251,35 @@ ${data.markdown.slice(0, 4000)}`;
 
     const post = await callAI(systemPrompt, userContent);
     return { post: post.trim() };
+  });
+
+/**
+ * Genera un prompt cinematografico in inglese per generatori video AI esterni (Runway Gen-3, Kling, Sora, Luma).
+ */
+export const generateVideoPrompt = createServerFn({ method: "POST" })
+  .inputValidator((d: { title: string; excerpt?: string; topics?: string[]; platform?: string }) => ({
+    title: String(d.title ?? "").slice(0, 300),
+    excerpt: String(d.excerpt ?? "").slice(0, 500),
+    topics: Array.isArray(d.topics) ? d.topics.map((t) => String(t).slice(0, 50)) : [],
+    platform: String(d.platform ?? "linkedin").slice(0, 20),
+  }))
+  .handler(async ({ data }) => {
+    if (!data.title) throw new Error("Titolo articolo mancante");
+
+    const systemPrompt = `You are a film director and expert prompt engineer for cutting-edge text-to-video AI models (such as Runway Gen-3 Alpha, Kling AI, OpenAI Sora, and Luma Dream Machine).
+Generate a cinematic, highly descriptive video prompt IN ENGLISH (the universal standard for AI video generators) to produce a compelling, photorealistic 5 to 10 second video clip for a social post on ${data.platform}.
+RULES FOR THE VIDEO PROMPT:
+1. Subject & Action: Clear physical action in an authentic professional/industrial B2B setting.
+2. Camera Motion: Specify smooth cinematic movement (e.g., slow cinematic push-in, subtle pan, sweeping aerial shot, rack focus).
+3. Lighting & Aesthetic: Natural diffused studio/factory lighting, cinematic depth of field, 35mm lens, 4K photorealistic, 24fps filmic look.
+4. Strict Negatives: No overlaid text, no subtitles, no watermarks, no distorted faces or impossible physics.
+5. Length: 3-5 vivid, concise English sentences ready to paste into the video generator prompt box.
+Output ONLY the raw English prompt, without introductory text or quotes.`;
+
+    const userContent = `Article title: ${data.title}
+Industry / Topics: ${data.topics.join(", ") || "General B2B"}
+Article excerpt: ${data.excerpt || "n/a"}`;
+
+    const promptText = await callAI(systemPrompt, userContent);
+    return { prompt: promptText.trim() };
   });
