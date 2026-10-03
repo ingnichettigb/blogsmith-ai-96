@@ -169,7 +169,7 @@ export const generateArticleImage = createServerFn({ method: "POST" })
         model: "openai/gpt-image-2.5-sunburst",
         prompt: enhancedPrompt,
         size: "1536x1024",
-        quality: "standard",
+        quality: "medium",
         stream: false,
       }),
     });
