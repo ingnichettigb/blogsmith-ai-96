@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
-import { Download, FileJson, FileText } from "lucide-react";
+import { Download, FileJson, FileText, PenLine, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { EditableImage } from "./EditableImage";
 import { Blocks } from "./Blocks";
 import { useStore, type Article, type Product, type Rotation } from "@/lib/store";
-import { COVER_FILE, LANGS, LANG_LABEL, figureFile, markdownToBlocks, mdWords, type Lang } from "@/lib/blocks";
+import { COVER_FILE, LANGS, LANG_LABEL, figureFile, markdownToBlocks, mdWords, readingTime, type Lang } from "@/lib/blocks";
 import { articleJson, folderName, toJpeg } from "@/lib/article";
 
 function SponsoredSidebar({ products, rotation }: { products: Product[]; rotation: Rotation }) {
@@ -47,8 +49,60 @@ export function PreviewPanel() {
   const [lang, setLang] = useState<Lang>("it");
   const doc = useMemo(() => articleJson(a), [a]);
   const t = doc.translations[lang] ?? doc.translations.it!;
+
+  // Stato per la modalità di modifica testo rapida
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editExcerpt, setEditExcerpt] = useState("");
+  const [editMarkdown, setEditMarkdown] = useState("");
+
+  const startEditing = () => {
+    setEditTitle(t.title);
+    setEditExcerpt(t.excerpt);
+    setEditMarkdown(t.markdown);
+    setIsEditing(true);
+    setView("single");
+  };
+
+  const saveCurrentEdit = (targetLang = lang) => {
+    if (targetLang === "it") {
+      upd({
+        title: editTitle,
+        excerpt: editExcerpt,
+        markdown: editMarkdown,
+      });
+    } else {
+      const existing = a.translations[targetLang] ?? t;
+      upd({
+        translations: {
+          ...a.translations,
+          [targetLang]: {
+            ...existing,
+            title: editTitle,
+            excerpt: editExcerpt,
+            markdown: editMarkdown,
+            readingTime: readingTime(editMarkdown),
+          },
+        },
+      });
+    }
+    toast.success(`Modifiche salvate (${LANG_LABEL[targetLang]})`);
+  };
+
+  const handleSelectLang = (newLang: Lang) => {
+    if (isEditing) {
+      saveCurrentEdit(lang);
+      const nextT = doc.translations[newLang] ?? doc.translations.it!;
+      setEditTitle(nextT.title);
+      setEditExcerpt(nextT.excerpt);
+      setEditMarkdown(nextT.markdown);
+    }
+    setLang(newLang);
+  };
+
+  const currentDisplayMd = isEditing ? editMarkdown : t.markdown;
   const blocks = useMemo(() => markdownToBlocks(t.markdown), [t.markdown]);
-  const words = mdWords(t.markdown);
+  const words = mdWords(currentDisplayMd);
 
   const exportZip = async () => {
     if (!a.markdown) { toast.error("Genera prima un articolo"); return; }
@@ -85,16 +139,67 @@ export function PreviewPanel() {
       <div className="sticky top-[72px] z-10 space-y-3 rounded-xl border-2 bg-card p-3">
         <div className="flex flex-wrap items-center gap-3">
           <div role="tablist" className="grid flex-1 grid-cols-2 gap-2">
-            <button role="tab" aria-selected={view === "list"} onClick={() => setView("list")} className={`h-12 rounded-md border-2 font-bold ${view === "list" ? "bg-primary text-primary-foreground" : ""}`}>Vetrina /blog</button>
-            <button role="tab" aria-selected={view === "single"} onClick={() => setView("single")} className={`h-12 rounded-md border-2 font-bold ${view === "single" ? "bg-primary text-primary-foreground" : ""}`}>Articolo /blog/slug</button>
+            <button
+              role="tab"
+              aria-selected={view === "list"}
+              onClick={() => { setView("list"); setIsEditing(false); }}
+              className={`h-12 rounded-md border-2 font-bold ${view === "list" ? "bg-primary text-primary-foreground" : ""}`}
+            >
+              Vetrina /blog
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === "single"}
+              onClick={() => setView("single")}
+              className={`h-12 rounded-md border-2 font-bold ${view === "single" ? "bg-primary text-primary-foreground" : ""}`}
+            >
+              Articolo /blog/slug
+            </button>
           </div>
-          <span className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${a.manual || words >= a.minWords ? "text-success" : "text-destructive"}`} aria-live="polite">{a.manual ? `${words} parole` : `${words} / ${a.minWords} parole`}</span>
+
+          {a.markdown && (
+            <Button
+              variant={isEditing ? "default" : "outline"}
+              className="h-12 border-2 text-base font-bold"
+              onClick={() => {
+                if (isEditing) {
+                  saveCurrentEdit();
+                  setIsEditing(false);
+                } else {
+                  startEditing();
+                }
+              }}
+            >
+              {isEditing ? (
+                <>
+                  <Check className="mr-1 size-5" /> Salva testo
+                </>
+              ) : (
+                <>
+                  <PenLine className="mr-1 size-5" /> Modifica testo
+                </>
+              )}
+            </Button>
+          )}
+
+          <span
+            className={`rounded-md border-2 px-3 py-2 text-lg font-extrabold ${a.manual || words >= a.minWords ? "text-success" : "text-destructive"}`}
+            aria-live="polite"
+          >
+            {a.manual ? `${words} parole` : `${words} / ${a.minWords} parole`}
+          </span>
         </div>
+
         <div role="tablist" aria-label="Lingua" className="grid grid-cols-4 gap-2">
           {LANGS.map((l) => (
-            <button key={l} role="tab" aria-selected={lang === l} disabled={l !== "it" && !doc.translations[l]}
-              onClick={() => setLang(l)}
-              className={`h-11 rounded-md border-2 font-bold uppercase disabled:opacity-40 ${lang === l ? "bg-primary text-primary-foreground" : ""}`}>
+            <button
+              key={l}
+              role="tab"
+              aria-selected={lang === l}
+              disabled={l !== "it" && !doc.translations[l]}
+              onClick={() => handleSelectLang(l)}
+              className={`h-11 rounded-md border-2 font-bold uppercase disabled:opacity-40 ${lang === l ? "bg-primary text-primary-foreground" : ""}`}
+            >
               {l}
             </button>
           ))}
@@ -141,24 +246,113 @@ export function PreviewPanel() {
           </div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <article className="min-w-0">
-              <EditableImage
-                src={a.cover}
-                alt={a.coverAlt}
-                label="copertina"
-                className="aspect-video w-full rounded-xl border-2"
-                placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted text-muted-foreground">Nessuna copertina</div>}
-                onReplace={(src) => upd({ cover: src })}
-              />
-              {t.topics.length > 0 && (
-                <p className="mt-4 flex flex-wrap gap-2">
-                  {t.topics.map((x) => <span key={x} className="rounded bg-secondary px-2 py-0.5 font-bold">{x}</span>)}
-                </p>
-              )}
-              <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{t.title}</h1>
-              <p className="text-muted-foreground">{a.date} · {a.author} · {t.readingTime}</p>
-              <Blocks content={blocks} figures={a.figures} onReplaceFigure={(id, src) => upd({ figures: a.figures.map((f) => (f.id === id ? { ...f, src } : f)) })} />
-            </article>
+            {isEditing ? (
+              <div className="space-y-6 rounded-xl border-2 bg-card p-4 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 pb-4">
+                  <div>
+                    <h2 className="text-2xl font-extrabold">Modifica testo ({LANG_LABEL[lang]})</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Correggi refusi o riformula. I richiami alle figure mantengono il formato <code>![didascalia](figura-N.jpg)</code>.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="border-2 font-bold"
+                      onClick={() => {
+                        setIsEditing(false);
+                        toast.info("Modifiche annullate");
+                      }}
+                    >
+                      <X className="mr-1 size-5" /> Annulla
+                    </Button>
+                    <Button
+                      className="font-bold"
+                      onClick={() => {
+                        saveCurrentEdit();
+                        setIsEditing(false);
+                      }}
+                    >
+                      <Check className="mr-1 size-5" /> Salva e chiudi
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-title" className="mb-1 block font-bold">Titolo dell'articolo</label>
+                  <Input
+                    id="edit-title"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="h-14 border-2 text-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-excerpt" className="mb-1 block font-bold">Estratto (riassunto per la vetrina e motori di ricerca)</label>
+                  <Textarea
+                    id="edit-excerpt"
+                    value={editExcerpt}
+                    onChange={(e) => setEditExcerpt(e.target.value)}
+                    rows={3}
+                    className="border-2 text-base"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-markdown" className="mb-1 block font-bold">Corpo dell'articolo (Markdown)</label>
+                  <Textarea
+                    id="edit-markdown"
+                    value={editMarkdown}
+                    onChange={(e) => setEditMarkdown(e.target.value)}
+                    rows={20}
+                    className="border-2 font-mono text-base leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 border-t-2 pt-4">
+                  <Button
+                    variant="outline"
+                    className="border-2 font-bold"
+                    onClick={() => {
+                      setIsEditing(false);
+                      toast.info("Modifiche annullate");
+                    }}
+                  >
+                    <X className="mr-1 size-5" /> Annulla
+                  </Button>
+                  <Button
+                    className="font-bold"
+                    onClick={() => {
+                      saveCurrentEdit();
+                      setIsEditing(false);
+                    }}
+                  >
+                    <Check className="mr-1 size-5" /> Salva e chiudi
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <article className="min-w-0">
+                <EditableImage
+                  src={a.cover}
+                  alt={a.coverAlt}
+                  label="copertina"
+                  className="aspect-video w-full rounded-xl border-2"
+                  placeholder={<div className="grid size-full place-items-center border-2 border-dashed bg-muted text-muted-foreground">Nessuna copertina</div>}
+                  onReplace={(src) => upd({ cover: src })}
+                />
+                {t.topics.length > 0 && (
+                  <p className="mt-4 flex flex-wrap gap-2">
+                    {t.topics.map((x) => <span key={x} className="rounded bg-secondary px-2 py-0.5 font-bold">{x}</span>)}
+                  </p>
+                )}
+                <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{t.title}</h1>
+                <p className="text-muted-foreground">{a.date} · {a.author} · {t.readingTime}</p>
+                <Blocks content={blocks} figures={a.figures} onReplaceFigure={(id, src) => upd({ figures: a.figures.map((f) => (f.id === id ? { ...f, src } : f)) })} />
+              </article>
+            )}
+
             <aside className="lg:sticky lg:top-40 lg:self-start">
               <SponsoredSidebar products={state.products} rotation={state.rotation} />
             </aside>
