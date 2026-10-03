@@ -1,11 +1,29 @@
-import { useState } from "react";
-import { Share2, Linkedin, Facebook, Send, Sparkles, Copy, Check, Trash2, Loader2, ArrowRight, BookOpen } from "lucide-react";
+import { useState, useRef } from "react";
+import {
+  Share2,
+  Linkedin,
+  Facebook,
+  Send,
+  Sparkles,
+  Copy,
+  Check,
+  Trash2,
+  Loader2,
+  ArrowRight,
+  BookOpen,
+  Download,
+  Video,
+  Image as ImageIcon,
+  Film,
+  Clapperboard,
+  Wand2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { useStore, type Article, countWords } from "@/lib/store";
-import { generateSocialPost } from "@/lib/ai.functions";
+import { useStore, type Article, type SocialPosts, countWords } from "@/lib/store";
+import { generateSocialPost, generateVideoPrompt } from "@/lib/ai.functions";
 
 type Platform = "linkedin" | "facebook" | "telegram";
 
@@ -17,23 +35,103 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
   const { state, set } = useStore();
   const { article } = state;
   const [loadingPlatform, setLoadingPlatform] = useState<Platform | "">("");
+  const [loadingVideoPrompt, setLoadingVideoPrompt] = useState<Platform | "">("");
   const [copiedPlatform, setCopiedPlatform] = useState<Platform | "">("");
+  const [copiedPromptPlatform, setCopiedPromptPlatform] = useState<Platform | "">("");
+
+  // Stato per mostrare o nascondere il box del prompt video per ciascun canale
+  const [showVideoPromptBox, setShowVideoPromptBox] = useState<Record<Platform, boolean>>({
+    linkedin: false,
+    facebook: false,
+    telegram: false,
+  });
+
+  // Riferimenti per input file video
+  const videoInputRefs = {
+    linkedin: useRef<HTMLInputElement>(null),
+    facebook: useRef<HTMLInputElement>(null),
+    telegram: useRef<HTMLInputElement>(null),
+  };
 
   const hasArticle = Boolean(article.title?.trim() || article.markdown?.trim());
   const words = countWords(article.markdown || "");
 
-  const updatePost = (platform: Platform, text: string) => {
+  // Elenco immagini disponibili dall'articolo corrente (copertina + figure)
+  const availableImages = [
+    ...(article.cover ? [{ id: "cover", label: "Copertina", src: article.cover }] : []),
+    ...article.figures
+      .filter((f) => Boolean(f.src))
+      .map((f, idx) => ({ id: f.id || `fig-${idx + 1}`, label: `Figura ${idx + 1}`, src: f.src })),
+  ];
+
+  const posts: SocialPosts = article.socialPosts ?? {};
+
+  const updateArticleSocial = (patch: Partial<SocialPosts>) => {
     const updated: Article = {
       ...article,
       socialPosts: {
         ...(article.socialPosts ?? {}),
-        [platform]: text,
+        ...patch,
       },
     };
     set({ article: updated });
   };
 
-  const doGenerate = async (platform: Platform) => {
+  const updatePostText = (platform: Platform, text: string) => {
+    updateArticleSocial({ [platform]: text });
+  };
+
+  const updateVideoPromptText = (platform: Platform, prompt: string) => {
+    const key = `${platform}VideoPrompt` as keyof SocialPosts;
+    updateArticleSocial({ [key]: prompt });
+  };
+
+  const selectImageForPlatform = (platform: Platform, imageSrc: string) => {
+    const key = `${platform}Image` as keyof SocialPosts;
+    updateArticleSocial({ [key]: imageSrc });
+    toast.success("Immagine selezionata per il post");
+  };
+
+  const handleVideoUpload = (platform: Platform, file?: File) => {
+    if (!file) return;
+    if (file.size > 30 * 1024 * 1024) {
+      toast.warning("File video superiore a 30 MB: ti consigliamo un video compresso (es. MP4 720p).");
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const videoKey = `${platform}Video` as keyof SocialPosts;
+      const nameKey = `${platform}VideoName` as keyof SocialPosts;
+      updateArticleSocial({
+        [videoKey]: dataUrl,
+        [nameKey]: file.name,
+      });
+      toast.success(`Video caricato: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeVideo = (platform: Platform) => {
+    const videoKey = `${platform}Video` as keyof SocialPosts;
+    const nameKey = `${platform}VideoName` as keyof SocialPosts;
+    updateArticleSocial({
+      [videoKey]: undefined,
+      [nameKey]: undefined,
+    });
+    toast.info("Video rimosso. Torna visibile l'immagine selezionata.");
+  };
+
+  const downloadFile = (src: string, filename: string) => {
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast.success(`Scaricato: ${filename}`);
+  };
+
+  const doGeneratePost = async (platform: Platform) => {
     if (!article.title.trim()) {
       toast.error("L'articolo non ha un titolo. Compila prima il titolo dell'articolo.");
       return;
@@ -49,13 +147,38 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
           topics: article.topics,
         },
       });
-      updatePost(platform, res.post);
+      updatePostText(platform, res.post);
       const name = platform === "linkedin" ? "LinkedIn" : platform === "facebook" ? "Facebook" : "Telegram";
       toast.success(`Post per ${name} generato!`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore durante la generazione del post");
     } finally {
       setLoadingPlatform("");
+    }
+  };
+
+  const doGenerateVideoPrompt = async (platform: Platform) => {
+    if (!article.title.trim()) {
+      toast.error("L'articolo non ha un titolo.");
+      return;
+    }
+    setLoadingVideoPrompt(platform);
+    try {
+      const res = await generateVideoPrompt({
+        data: {
+          platform,
+          title: article.title,
+          excerpt: article.excerpt,
+          topics: article.topics,
+        },
+      });
+      updateVideoPromptText(platform, res.prompt);
+      setShowVideoPromptBox((prev) => ({ ...prev, [platform]: true }));
+      toast.success("Prompt video AI generato in inglese!");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore generazione prompt video");
+    } finally {
+      setLoadingVideoPrompt("");
     }
   };
 
@@ -75,8 +198,23 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
     }
   };
 
+  const doCopyVideoPrompt = async (platform: Platform, promptText: string) => {
+    if (!promptText.trim()) {
+      toast.error("Nessun prompt da copiare.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(promptText);
+      setCopiedPromptPlatform(platform);
+      setTimeout(() => setCopiedPromptPlatform(""), 2000);
+      toast.success("Prompt video copiato negli appunti! Incollalo in Runway, Kling o Sora.");
+    } catch {
+      toast.error("Impossibile copiare il prompt");
+    }
+  };
+
   const doClear = (platform: Platform) => {
-    updatePost(platform, "");
+    updatePostText(platform, "");
     toast.info("Testo svuotato");
   };
 
@@ -99,8 +237,6 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
     );
   }
 
-  const posts = article.socialPosts ?? {};
-
   const cards: Array<{
     id: Platform;
     name: string;
@@ -116,7 +252,7 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
       icon: Linkedin,
       badge: "B2B & Leadership",
       badgeColor: "border-blue-500/50 text-blue-500 bg-blue-500/10",
-      description: "Gancio forte iniziale, paragrafi snelli, punti elenco tecnici e domanda finale per generare discussione professionale.",
+      description: "Gancio forte iniziale, paragrafi snelli, punti elenco tecnici e domanda finale per generare discussione tra professionisti.",
       recommendedChars: "1.200 - 1.800 car.",
     },
     {
@@ -168,9 +304,9 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-lg font-black">Scegli la piattaforma e genera il post</h2>
+        <h2 className="text-lg font-black">Scegli la piattaforma, gestisci i media e genera il post</h2>
         <p className="text-sm text-muted-foreground">
-          Ogni social ha un registro stilistico dedicato. Clicca <strong>«Genera post con AI»</strong> solo sulla piattaforma che intendi pubblicare per non sprecare crediti. Puoi modificare liberamente il testo generato prima di copiarlo.
+          Ogni social ha un registro stilistico dedicato. Puoi abbinare l'immagine del blog, caricare un video oppure generare un <strong>prompt cinematografico</strong> da dare in pasto all'AI video.
         </p>
       </div>
 
@@ -180,7 +316,18 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
           const currentText = posts[card.id] ?? "";
           const charCount = currentText.length;
           const isBusy = loadingPlatform === card.id;
+          const isBusyPrompt = loadingVideoPrompt === card.id;
           const isCopied = copiedPlatform === card.id;
+          const isPromptCopied = copiedPromptPlatform === card.id;
+
+          // Video o immagine assegnata a questo social
+          const assignedVideo = posts[`${card.id}Video` as keyof SocialPosts];
+          const assignedVideoName = posts[`${card.id}VideoName` as keyof SocialPosts];
+          const assignedImage =
+            posts[`${card.id}Image` as keyof SocialPosts] || availableImages[0]?.src || "";
+          const currentVideoPrompt =
+            posts[`${card.id}VideoPrompt` as keyof SocialPosts] || "";
+          const isPromptBoxOpen = showVideoPromptBox[card.id] || Boolean(currentVideoPrompt);
 
           return (
             <div key={card.id} className="flex flex-col rounded-xl border-2 bg-card p-5">
@@ -197,17 +344,241 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
                 </Badge>
               </div>
 
-              <p className="mb-4 min-h-[40px] text-xs leading-relaxed text-muted-foreground">
+              <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
                 {card.description}
               </p>
 
-              {/* Azione di generazione primaria */}
+              {/* SEZIONE MULTIMEDIALE: Immagine, Video o Prompt Video AI */}
+              <div className="mb-4 rounded-lg border-2 bg-secondary/30 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-muted-foreground">
+                    {assignedVideo ? <Film className="size-3.5 text-primary" /> : <ImageIcon className="size-3.5 text-primary" />}
+                    Media per {card.name}
+                  </span>
+                  {assignedVideo && (
+                    <Badge variant="secondary" className="border text-[10px] font-bold">
+                      Video allegato
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Player Video oppure Immagine */}
+                {assignedVideo ? (
+                  <div className="space-y-2">
+                    <video
+                      src={assignedVideo}
+                      controls
+                      className="aspect-video max-h-44 w-full rounded-md border-2 bg-black object-contain"
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="truncate max-w-[180px] font-semibold">{assignedVideoName || "video-post.mp4"}</span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 border px-2 text-xs font-bold"
+                          onClick={() => downloadFile(assignedVideo, assignedVideoName || `video-${card.id}.mp4`)}
+                          title="Scarica file video"
+                        >
+                          <Download className="size-3.5" /> Scarica
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-destructive hover:bg-destructive/10"
+                          onClick={() => removeVideo(card.id)}
+                          title="Rimuovi video e torna all'immagine"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {assignedImage ? (
+                      <div className="relative overflow-hidden rounded-md border-2 bg-black">
+                        <img
+                          src={assignedImage}
+                          alt={`Media per ${card.name}`}
+                          className="aspect-video max-h-44 w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-video max-h-36 w-full items-center justify-center rounded-md border-2 border-dashed bg-secondary text-center text-xs text-muted-foreground">
+                        Nessuna immagine nell'articolo.
+                      </div>
+                    )}
+
+                    {/* Miniature per scegliere quale figura associare */}
+                    {availableImages.length > 1 && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                        {availableImages.map((img) => {
+                          const isSelected = assignedImage === img.src;
+                          return (
+                            <button
+                              key={img.id}
+                              onClick={() => selectImageForPlatform(card.id, img.src)}
+                              className={`relative h-12 w-20 flex-shrink-0 overflow-hidden rounded border-2 transition-all ${
+                                isSelected ? "border-primary ring-2 ring-primary" : "opacity-60 hover:opacity-100"
+                              }`}
+                              title={`Usa ${img.label}`}
+                            >
+                              <img src={img.src} alt={img.label} className="size-full object-cover" />
+                              <span className="absolute inset-x-0 bottom-0 bg-black/80 px-1 text-[9px] font-bold text-white truncate">
+                                {img.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Azioni: Scarica Immagine + Carica Video + Prompt Video */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 sm:flex sm:items-center">
+                      {assignedImage && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 flex-1 border-2 text-xs font-bold"
+                          onClick={() => downloadFile(assignedImage, `immagine-${card.id}.jpg`)}
+                        >
+                          <Download className="size-3.5" /> Scarica foto
+                        </Button>
+                      )}
+
+                      {/* Tasto Carica Video */}
+                      <input
+                        type="file"
+                        ref={videoInputRefs[card.id]}
+                        accept="video/mp4,video/webm,video/quicktime"
+                        className="hidden"
+                        onChange={(e) => handleVideoUpload(card.id, e.target.files?.[0])}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 flex-1 border-2 text-xs font-bold hover:bg-primary/10"
+                        title="Allega un video pronto (MP4, WebM)"
+                        onClick={() => videoInputRefs[card.id].current?.click()}
+                      >
+                        <Video className="size-3.5 text-primary" /> Carica video
+                      </Button>
+
+                      {/* Tasto per aprire o generare il prompt video */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`h-8 flex-1 border-2 text-xs font-bold ${
+                          isPromptBoxOpen ? "bg-secondary text-primary" : ""
+                        }`}
+                        title="Genera un prompt da incollare in un generatore video AI (Runway, Kling, Sora)"
+                        onClick={() =>
+                          setShowVideoPromptBox((prev) => ({
+                            ...prev,
+                            [card.id]: !prev[card.id],
+                          }))
+                        }
+                      >
+                        <Clapperboard className="size-3.5 text-amber-500" /> Prompt video
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* BOX DEDICATO: Prompt per generatore video AI */}
+                {isPromptBoxOpen && (
+                  <div className="mt-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400">
+                        <Wand2 className="size-3.5" /> Prompt Video AI (Runway, Kling, Sora)
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setShowVideoPromptBox((prev) => ({
+                            ...prev,
+                            [card.id]: false,
+                          }))
+                        }
+                      >
+                        Chiudi
+                      </Button>
+                    </div>
+
+                    <p className="text-[11px] leading-tight text-muted-foreground">
+                      Genera una descrizione cinematografica in inglese pronta da copiare e incollare nell'AI video.
+                    </p>
+
+                    <Button
+                      size="sm"
+                      className="h-8 w-full border-2 font-bold"
+                      variant="outline"
+                      disabled={loadingVideoPrompt !== ""}
+                      onClick={() => void doGenerateVideoPrompt(card.id)}
+                    >
+                      {isBusyPrompt ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" /> Generazione prompt video...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="size-3.5 text-amber-500" />{" "}
+                          {currentVideoPrompt ? "Rigenera prompt video" : "Crea prompt video AI"}
+                        </>
+                      )}
+                    </Button>
+
+                    <Textarea
+                      value={currentVideoPrompt}
+                      onChange={(e) => updateVideoPromptText(card.id, e.target.value)}
+                      placeholder="Il prompt video generato in inglese comparirà qui. Potrai modificarlo liberamente prima di copiarlo..."
+                      rows={4}
+                      className="w-full resize-y border-2 font-mono text-xs leading-relaxed"
+                    />
+
+                    {currentVideoPrompt.trim() && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          className="h-8 flex-1 border-2 font-bold"
+                          variant={isPromptCopied ? "secondary" : "default"}
+                          onClick={() => void doCopyVideoPrompt(card.id, currentVideoPrompt)}
+                        >
+                          {isPromptCopied ? (
+                            <>
+                              <Check className="size-3.5 text-emerald-500" /> Prompt copiato!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3.5" /> Copia prompt video
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                          title="Cancella prompt"
+                          onClick={() => updateVideoPromptText(card.id, "")}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Azione di generazione primaria del testo del post */}
               <div className="mb-3">
                 <Button
                   className="h-11 w-full border-2 font-bold"
                   variant={currentText ? "outline" : "default"}
                   disabled={loadingPlatform !== ""}
-                  onClick={() => void doGenerate(card.id)}
+                  onClick={() => void doGeneratePost(card.id)}
                 >
                   {isBusy ? (
                     <>
@@ -221,13 +592,13 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
                 </Button>
               </div>
 
-              {/* Editor modificabile */}
+              {/* Editor testo modificabile */}
               <div className="relative flex flex-1 flex-col">
                 <Textarea
                   value={currentText}
-                  onChange={(e) => updatePost(card.id, e.target.value)}
+                  onChange={(e) => updatePostText(card.id, e.target.value)}
                   placeholder={`Clicca sul pulsante sopra per generare la bozza con l'AI, oppure scrivi o incolla qui il tuo post per ${card.name}...`}
-                  rows={14}
+                  rows={12}
                   className="w-full resize-y border-2 font-mono text-sm leading-relaxed"
                 />
 
@@ -250,7 +621,7 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
                 >
                   {isCopied ? (
                     <>
-                      <Check className="size-4 text-emerald-500" /> Copiato!
+                      <Check className="size-4 text-emerald-500" /> Testo copiato!
                     </>
                   ) : (
                     <>
@@ -276,4 +647,3 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
     </div>
   );
 }
-
