@@ -36,7 +36,7 @@ async function callAI(system: string, user: string): Promise<string> {
     buf += dec.decode(value, { stream: true });
     let i: number;
     while ((i = buf.indexOf("\n\n")) >= 0) {
-      const frame = buf.slice(0, i);
+      const frame = buf.slice(i ? 0 : 0, i);
       buf = buf.slice(i + 2);
       for (const line of frame.split("\n")) {
         if (!line.startsWith("data:")) continue;
@@ -190,4 +190,66 @@ export const generateArticleImage = createServerFn({ method: "POST" })
       return { url: first.url };
     }
     throw new Error("Nessuna immagine generata ricevuta dall'AI.");
+  });
+
+/**
+ * Genera un post social ottimizzato (LinkedIn, Facebook o Telegram) basato sull'articolo.
+ * Chiamato solo per la specifica piattaforma richiesta, zero spreco di crediti.
+ */
+export const generateSocialPost = createServerFn({ method: "POST" })
+  .inputValidator((d: { platform: string; title: string; excerpt?: string; markdown?: string; topics?: string[] }) => ({
+    platform: (["linkedin", "facebook", "telegram"].includes(d.platform) ? d.platform : "linkedin") as "linkedin" | "facebook" | "telegram",
+    title: String(d.title ?? "").slice(0, 300),
+    excerpt: String(d.excerpt ?? "").slice(0, 500),
+    markdown: String(d.markdown ?? "").slice(0, 10000),
+    topics: Array.isArray(d.topics) ? d.topics.map((t) => String(t).slice(0, 50)) : [],
+  }))
+  .handler(async ({ data }) => {
+    if (!data.title) throw new Error("Titolo articolo mancante");
+
+    let systemPrompt = "";
+    if (data.platform === "linkedin") {
+      systemPrompt = `Sei un esperto copywriter B2B specializzato in LinkedIn per professionisti, costruttori, impiantisti e dirigenti aziendali.
+Scrivi un post per LinkedIn in lingua italiana basandoti sull'articolo fornito.
+REGOLE DI FORMATTAZIONE PER LINKEDIN:
+1. Gancio iniziale (prime 2 righe): forte, curioso, che attiri l'attenzione e spinga a cliccare "Vedi altro".
+2. Struttura del testo: paragrafi molto brevi di 1-2 frasi separati da righe vuote per una lettura fluida.
+3. Punti elenco (3-4 bullet point con simboli discreti come 🔹 o •) che mettono in risalto soluzioni, dati o lezioni pratiche.
+4. Tono professionale, analitico e orientato a concrete sfide tecniche ed economiche.
+5. Chiusura: domanda aperta stimolante per invitare alla discussione e ai commenti tra addetti ai lavori.
+6. Invito all'azione chiaro: "[Link all'approfondimento completo nel primo commento / sul nostro blog]".
+7. In calce: 3-5 hashtag pertinenti (es. #B2B #Innovazione #Settore).
+NON inserire formule di saluto vuote (es. "Cari follower"). NON usare markdown con asterischi per il grassetto (LinkedIn non supporta il markdown nativo). Restituisci SOLO il testo puro del post pronto per essere copiato e pubblicato.`;
+    } else if (data.platform === "facebook") {
+      systemPrompt = `Sei un copywriter esperto in social media marketing e divulgazione per Facebook.
+Scrivi un post per Facebook in lingua italiana basandoti sull'articolo fornito.
+REGOLE DI FORMATTAZIONE PER FACEBOOK:
+1. Incipit coinvolgente, empatico e narrativo incentrato su un problema concreto che aziende o persone affrontano.
+2. Spiegazione semplice e accessibile dell'approfondimento o delle risposte individuate nell'articolo.
+3. Call-to-action finale chiara e visibile: "👉 Leggi l'approfondimento completo sul nostro blog: [Inserisci link]".
+4. Usa qualche emoji adatta per dare ritmo visivo al testo.
+5. In calce: 2-3 hashtag tematici.
+NON usare markdown per il grassetto con asterischi. Restituisci SOLO il testo puro del post pronto da pubblicare.`;
+    } else {
+      // telegram
+      systemPrompt = `Sei il redattore di un canale broadcast Telegram aziendale e specialistico.
+Scrivi un post per un canale Telegram in lingua italiana basandoti sull'articolo fornito.
+REGOLE DI FORMATTAZIONE PER TELEGRAM:
+1. Titolo del messaggio in grassetto incisivo e chiaro (usa **Titolo** o lettere maiuscole).
+2. Breve sommario di 1-2 frasi che inquadra il contesto.
+3. Sintesi snella (3-4 punti chiave rapidi con emoji come 📌, 💡, ⚙️) che si legge in 30 secondi dallo smartphone.
+4. Link finale: "🔗 Leggi l'articolo completo: [Link al blog]".
+5. Massimo 1-2 hashtag tematici.
+Restituisci SOLO il testo del messaggio pronto per il broadcast su Telegram.`;
+    }
+
+    const userContent = `Titolo articolo: ${data.title}
+Argomenti: ${data.topics.length > 0 ? data.topics.join(", ") : "n/d"}
+Estratto: ${data.excerpt || "n/d"}
+
+Testo articolo (estratto):
+${data.markdown.slice(0, 4000)}`;
+
+    const post = await callAI(systemPrompt, userContent);
+    return { post: post.trim() };
   });
