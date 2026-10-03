@@ -23,6 +23,12 @@ export type SponsoredLink = {
 
 export type Figure = { id: string; caption: string; src: string };
 
+export type SocialPosts = {
+  linkedin?: string;
+  facebook?: string;
+  telegram?: string;
+};
+
 export type Article = {
   /** Numero progressivo (es. "001"), assegnato al primo "Salva" e poi mantenuto fisso per quell'articolo. */
   number: string;
@@ -46,6 +52,8 @@ export type Article = {
   manual?: boolean;
   ctaProductId: string;
   translations: Partial<Record<Lang, Translation>>;
+  /** Post pronti per i canali social (generati su richiesta o scritti a mano). */
+  socialPosts?: SocialPosts;
 };
 
 export const DEFAULT_AUTHOR = "team@corporateboostservice.eu";
@@ -89,6 +97,7 @@ export function createBlankArticle(): Article {
     coverAlt: "",
     ctaProductId: "",
     translations: {},
+    socialPosts: {},
   };
 }
 
@@ -113,7 +122,6 @@ const initial: State = {
   article: createBlankArticle(),
 };
 
-
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
 const KEY = "blogengine-state-v1";
 
@@ -128,7 +136,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const saved = (p.article ?? {}) as Partial<Article> & { topic?: string };
         // Compatibilità con i salvataggi precedenti: singolo "topic" -> elenco "topics".
         const topics = Array.isArray(saved.topics) ? saved.topics : saved.topic ? [saved.topic] : [];
-        setState({ ...initial, ...p, article: { ...initial.article, ...saved, topics } });
+        const socialPosts = saved.socialPosts ?? {};
+        setState({ ...initial, ...p, article: { ...initial.article, ...saved, topics, socialPosts } });
       }
     } catch {
       /* ignore */
