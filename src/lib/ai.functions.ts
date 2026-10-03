@@ -58,7 +58,10 @@ async function callAI(system: string, user: string): Promise<string> {
 }
 
 export const suggestTopics = createServerFn({ method: "POST" })
-  .inputValidator((d: { niche: string; site?: string }) => ({ niche: String(d.niche ?? "").slice(0, 300), site: String(d.site ?? "").slice(0, 300) }))
+  .inputValidator((d: { niche: string; site?: string }) => ({
+    niche: String(d.niche ?? "").slice(0, 300),
+    site: String(d.site ?? "").slice(0, 300),
+  }))
   .handler(async ({ data }) => {
     const txt = await callAI(
       "Sei un content strategist SEO italiano. Rispondi SOLO con 6 titoli di articoli, uno per riga, senza numeri né virgolette.",
@@ -138,3 +141,53 @@ Traduci: title, excerpt, topics, il testo del markdown e le caption delle figure
     }
   });
 
+/**
+ * Genera un'immagine fotografica 16:9 con AI Gateway Lovable (modello openai/gpt-image-2.5-sunburst).
+ * Crea una fotografia reale senza testi o watermark, integrando didascalia e contesto dell'articolo.
+ */
+export const generateArticleImage = createServerFn({ method: "POST" })
+  .inputValidator((d: { prompt: string; title?: string; context?: string }) => ({
+    prompt: String(d.prompt ?? "").slice(0, 500),
+    title: String(d.title ?? "").slice(0, 300),
+    context: String(d.context ?? "").slice(0, 300),
+  }))
+  .handler(async ({ data }) => {
+    const key = process.env['LOVABLE_API_KEY'];
+    if (!key) throw new Error("Chiave AI non configurata");
+
+    const subject = data.prompt.trim() || data.title.trim() || "professional corporate industrial setting";
+    const enhancedPrompt = `Authentic professional editorial photography, sharp focus, natural corporate and industrial lighting, 35mm lens style, 16:9 landscape aspect ratio, no text, no watermark, no logos, clean visual. Subject: ${subject}. Article context: ${data.title || "B2B article"}`;
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        "Lovable-API-Key": key,
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-image-2.5-sunburst",
+        prompt: enhancedPrompt,
+        size: "1536x1024",
+        quality: "standard",
+        stream: false,
+      }),
+    });
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      if (res.status === 429) throw new Error("Troppe richieste immagini: riprova tra un minuto.");
+      if (res.status === 402) throw new Error("Crediti AI esauriti per la generazione immagini.");
+      throw new Error(`Errore generazione immagine (${res.status}): ${t.slice(0, 200)}`);
+    }
+
+    const json = (await res.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+    const first = json.data?.[0];
+    if (first?.b64_json) {
+      return { url: `data:image/png;base64,${first.b64_json}` };
+    }
+    if (first?.url) {
+      return { url: first.url };
+    }
+    throw new Error("Nessuna immagine generata ricevuta dall'AI.");
+  });
