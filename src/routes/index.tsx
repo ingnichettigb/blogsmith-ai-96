@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Save, Upload, History, Trash2, ArchiveRestore } from "lucide-react";
+import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Share2, Save, Upload, History, Trash2, ArchiveRestore } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,6 +18,7 @@ import { AnalysisPanel } from "@/components/AnalysisPanel";
 import { ProductsPanel } from "@/components/ProductsPanel";
 import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
+import { SocialPanel } from "@/components/SocialPanel";
 import { useStore, type State } from "@/lib/store";
 import { generateBackupFilename, saveBackup, restoreBackup, restoreFromHistory, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
 
@@ -25,9 +26,9 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "BlogEngine AI — Genera blog professionali per qualsiasi sito" },
-      { name: "description", content: "Analizza un sito, genera articoli con AI, gestisci prodotti sponsorizzati ed esporta il blog pronto." },
+      { name: "description", content: "Analizza un sito, genera articoli con AI, gestisci prodotti sponsorizzati, anteprima ed export pronto all'uso con post social." },
       { property: "og:title", content: "BlogEngine AI" },
-      { property: "og:description", content: "Analisi sito, articoli AI, sidebar sponsorizzata ed export pronto all'uso." },
+      { property: "og:description", content: "Analisi sito, articoli AI, sidebar sponsorizzata, export ZIP e post social pronti." },
     ],
   }),
   component: Index,
@@ -118,52 +119,61 @@ function SaveRestoreControls() {
         </PopoverTrigger>
         <PopoverContent align="end" className="w-96">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="font-bold">Cronologia salvataggi</p>
+            <p className="text-sm font-bold">Salvataggi recenti</p>
             {history.length > 0 && (
-              <button
-                className="text-sm font-semibold text-destructive underline underline-offset-2"
-                onClick={() => { setHistory(clearBackupHistory()); toast.success("Cronologia svuotata"); }}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  clearBackupHistory();
+                  setHistory([]);
+                  toast.success("Cronologia svuotata");
+                }}
               >
-                Svuota tutto
-              </button>
+                Svuota elenco
+              </Button>
             )}
           </div>
           {history.length === 0 ? (
-            <p className="text-muted-foreground">Nessun salvataggio ancora effettuato.</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">Nessun salvataggio recente memorizzato in questo browser.</p>
           ) : (
             <>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_4.5rem] gap-2 border-b pb-1 text-sm font-bold text-muted-foreground">
-                <span>File</span>
-                <span>Data</span>
-                <span className="sr-only">Ripristina o elimina</span>
-              </div>
-              <ul className="max-h-64 space-y-1 overflow-auto text-sm">
-                {history.map((h) => (
-                  <li key={h.savedAt} className="grid grid-cols-[minmax(0,1fr)_auto_4.5rem] items-center gap-2 border-b py-1.5 last:border-0">
-                    <span className="truncate font-mono" title={h.filename}>{h.filename}</span>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatHistoryDate(h.savedAt)}</span>
-                    <span className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0 text-primary hover:bg-primary/10 hover:text-primary"
-                      aria-label={`Ripristina ${h.filename}`}
-                      title={h.hasSnapshot ? "Ripristina questo salvataggio" : "Ripristina: dovrai scegliere il file dal dispositivo"}
-                      disabled={busy !== ""}
-                      onClick={() => { setHistoryOpen(false); setPending(h); }}
-                    >
-                      <ArchiveRestore className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`Rimuovi dalla cronologia ${h.filename}`}
-                      onClick={() => setHistory(removeBackupHistoryEntry(h.savedAt))}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                    </span>
+              <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
+                {history.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-secondary">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{entry.articleTitle || "Senza titolo"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatHistoryDate(entry.savedAt)} {entry.hasSnapshot ? "• copia locale" : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2"
+                        title="Ripristina questo salvataggio"
+                        onClick={() => {
+                          setHistoryOpen(false);
+                          setPending(entry);
+                        }}
+                      >
+                        <ArchiveRestore className="size-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                        title="Elimina dall'elenco"
+                        onClick={() => {
+                          removeBackupHistoryEntry(entry.id);
+                          setHistory(getBackupHistory());
+                        }}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -199,6 +209,7 @@ const TABS = [
   { id: "prodotti", label: "Sponsorizzati", icon: Megaphone },
   { id: "articolo", label: "Articolo", icon: PenLine },
   { id: "anteprima", label: "Anteprima", icon: Eye },
+  { id: "social", label: "Social", icon: Share2 },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -244,13 +255,14 @@ function Index() {
           {tab === "prodotti" && <ProductsPanel />}
           {tab === "articolo" && <ArticlePanel />}
           {tab === "anteprima" && <PreviewPanel />}
+          {tab === "social" && <SocialPanel onNavigate={(target) => setTab(target)} />}
         </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t-2 bg-background lg:hidden" aria-label="Sezioni">
+        <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t-2 bg-background lg:hidden" aria-label="Sezioni">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => { setTab(t.id); window.scrollTo({ top: 0 }); }} aria-current={tab === t.id ? "page" : undefined}
-              className={`flex min-h-16 flex-col items-center justify-center gap-1 text-sm font-bold ${tab === t.id ? "bg-foreground text-background" : ""}`}>
-              <t.icon className="size-6" /> {t.label}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-bold ${tab === t.id ? "bg-foreground text-background" : ""}`}>
+              <t.icon className="size-5" /> {t.label}
             </button>
           ))}
         </nav>
