@@ -1,4 +1,3 @@
-
 /**
  * Backup / ripristino manuale dello stato dell'app (analisi, prodotti, articolo).
  * Non esiste un backend: lo stato vive già in localStorage e viene salvato
@@ -13,37 +12,6 @@ export type BackupHistoryEntry = {
   savedAt: string;
   /** true = una copia completa del salvataggio è conservata nel browser (IndexedDB) e si può ripristinare con un click. */
   hasSnapshot?: boolean;
-};
-
-export type CompleteBackupFile = {
-  tipo: "blogengine-completo";
-  versione: 1;
-  salvatoIl: string;
-  analysis: State["analysis"];
-  products: State["products"];
-  sponsoredLinks: State["sponsoredLinks"];
-  topics: State["topics"];
-  nextArticleNumber: State["nextArticleNumber"];
-  rotation: State["rotation"];
-  article: State["article"];
-};
-
-export type BlogBackupFile = {
-  tipo: "blogengine-blog";
-  versione: 1;
-  salvatoIl: string;
-  article: State["article"];
-  nextArticleNumber?: number;
-  topics?: string[];
-};
-
-export type AdsFile = {
-  tipo: "blogengine-pubblicita";
-  versione: 1;
-  salvatoIl: string;
-  products: Product[];
-  sponsoredLinks: SponsoredLink[];
-  rotation: Rotation;
 };
 
 const HISTORY_KEY = "blogengine-backup-history-v1";
@@ -116,7 +84,9 @@ function addBackupHistoryEntry(entry: BackupHistoryEntry): BackupHistoryEntry[] 
 
 /**
  * Rimuove una singola voce dalla cronologia (identificata dal timestamp,
- * unico per ogni salvataggio).
+ * unico per ogni salvataggio). Rimuove solo il promemoria elencato qui:
+ * non tocca né il file già scaricato/salvato sul disco dell'utente, né i
+ * dati dell'articolo/prodotti correnti.
  */
 export function removeBackupHistoryEntry(savedAt: string): BackupHistoryEntry[] {
   dropSnapshot(savedAt);
@@ -142,33 +112,61 @@ export function clearBackupHistory(): BackupHistoryEntry[] {
   return [];
 }
 
-// Caratteri non ammessi nei nomi file su Windows/macOS/Linux
+// -- Nomi file: formattazione sicura per il file system --
+
+// Caratteri non ammessi nei nomi file su Windows/macOS/Linux: vengono solo rimossi,
+// tutto il resto del titolo (spazi, accenti, punteggiatura) resta invariato.
 const FS_FORBIDDEN_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
 
-function cleanTitle(title: string): string {
-  const first20 = (title || "").trim().slice(0, 20);
-  const safeTitle = first20.replace(FS_FORBIDDEN_CHARS, "").trim();
-  return safeTitle.length > 0 ? safeTitle : "NoTitle";
-}
-
-function getTimestamp12(): string {
+export function generateBackupFilename(title: string): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const first20 = (title || "").trim().slice(0, 20);
+  const safeTitle = first20.replace(FS_FORBIDDEN_CHARS, "").trim();
+  const namePart = safeTitle.length > 0 ? safeTitle : "NoTitle";
+  return `${ts}BLOG-${namePart}.json`;
 }
 
-/** Nome file: AAAAMMGGHHmm-COMPLETO-<titolo>.json */
-export function generateCompleteBackupFilename(title: string): string {
-  return `${getTimestamp12()}-COMPLETO-${cleanTitle(title)}.json`;
+function stamp(kind: string, title: string) {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const safe = (title || "").trim().slice(0, 20).replace(FS_FORBIDDEN_CHARS, "").trim() || "NoTitle";
+  return `${ts}-${kind}-${safe}.json`;
 }
 
-/** Nome file: AAAAMMGGHHmm-BLOG-<titolo>.json */
-export function generateBlogBackupFilename(title: string): string {
-  return `${getTimestamp12()}-BLOG-${cleanTitle(title)}.json`;
+export const generateCompleteBackupFilename = (title: string) => stamp("BLOG-COMPLETO", title);
+export const generateBlogBackupFilename = (title: string) => stamp("BLOG", title);
+
+export type BackupKind = "completo" | "blog" | "pubblicita";
+
+/** Riconosce il tipo di file e restituisce solo i dati pertinenti da ripristinare. */
+export function classifyBackup(raw: unknown): { kind: BackupKind; data: Partial<State> } {
+  if (!raw || typeof raw !== "object") throw new Error("Il file scelto non è un backup valido");
+  const r = raw as Record<string, unknown> & Partial<State>;
+  const pick = (keys: (keyof State)[]) => {
+    const out: Partial<State> = {};
+    for (const k of keys) if (r[k] !== undefined) (out as Record<string, unknown>)[k] = r[k];
+    return out;
+  };
+  const blogKeys: (keyof State)[] = ["article", "topics", "nextArticleNumber"];
+  const adsKeys: (keyof State)[] = ["products", "sponsoredLinks", "rotation"];
+  if (r["tipo"] === "blogengine-pubblicita" || (!r.article && Array.isArray(r.products))) return { kind: "pubblicita", data: pick(adsKeys) };
+  if (r["tipo"] === "blogengine-blog" || (r.article && !r.products && !r.analysis)) return { kind: "blog", data: pick(blogKeys) };
+  return { kind: "completo", data: pick([...blogKeys, ...adsKeys, "analysis"]) };
 }
 
-/** Retrocompatibilità */
-export const generateBackupFilename = generateBlogBackupFilename;
+export async function saveBlogBackup(state: State, filename: string): Promise<SaveResult> {
+  return saveBackup(
+    { tipo: "blogengine-blog", versione: 1, salvatoIl: new Date().toISOString(), article: state.article, topics: state.topics, nextArticleNumber: state.nextArticleNumber },
+    filename,
+  );
+}
+
+export async function saveCompleteBackup(state: State, filename: string): Promise<SaveResult> {
+  return saveBackup({ tipo: "blogengine-completo", versione: 1, salvatoIl: new Date().toISOString(), ...state }, filename);
+}
 
 // -- Salvataggio: "Salva con nome" se il browser lo supporta, altrimenti download --
 
@@ -199,7 +197,9 @@ async function writeJsonFile(json: string, filename: string, description: string
       await writable.close();
       return "saved";
     } catch (e) {
+      // L'utente ha annullato la finestra "Salva con nome"
       if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
+      // Altri errori: prosegui con il fallback di download classico
     }
   }
 
@@ -232,39 +232,6 @@ export async function saveBackup(state: unknown, filename: string): Promise<Save
   return result;
 }
 
-/** Salva tutto lo stato dell'app (Analisi + Sponsorizzati + Argomenti + Articolo + Social) */
-export async function saveCompleteBackup(state: State, filename: string): Promise<SaveResult> {
-  const file: CompleteBackupFile = {
-    tipo: "blogengine-completo",
-    versione: 1,
-    salvatoIl: new Date().toISOString(),
-    analysis: state.analysis,
-    products: state.products,
-    sponsoredLinks: state.sponsoredLinks,
-    topics: state.topics,
-    nextArticleNumber: state.nextArticleNumber,
-    rotation: state.rotation,
-    article: state.article,
-  };
-  return saveBackup(file, filename);
-}
-
-/** Salva solo l'articolo attuale con le sue traduzioni, argomenti e post/media social */
-export async function saveBlogBackup(
-  data: { article: State["article"]; nextArticleNumber?: number; topics?: string[] },
-  filename: string,
-): Promise<SaveResult> {
-  const file: BlogBackupFile = {
-    tipo: "blogengine-blog",
-    versione: 1,
-    salvatoIl: new Date().toISOString(),
-    article: data.article,
-    nextArticleNumber: data.nextArticleNumber,
-    topics: data.topics,
-  };
-  return saveBackup(file, filename);
-}
-
 // -- Ripristino: l'utente sceglie il file .json da ricaricare --------------
 
 export async function restoreBackup(): Promise<unknown | null> {
@@ -291,7 +258,7 @@ export async function restoreBackup(): Promise<unknown | null> {
 
 /**
  * Ripristina una voce della cronologia. Se la copia è nel browser il ripristino è immediato;
- * altrimenti si apre la scelta del file .json.
+ * altrimenti (salvataggi vecchi, o copia non più disponibile) si apre la scelta del file .json.
  */
 export async function restoreFromHistory(entry: BackupHistoryEntry): Promise<{ data: unknown; fromFile: boolean } | null> {
   if (entry.hasSnapshot) {
@@ -306,103 +273,18 @@ export async function restoreFromHistory(entry: BackupHistoryEntry): Promise<{ d
   return data === null ? null : { data, fromFile: true };
 }
 
-// -- Riconoscimento intelligente del tipo di backup --------------------------
-
-export type SmartRestoreResult =
-  | { type: "completo"; data: Partial<State>; label: string }
-  | { type: "blog"; data: Partial<State>; label: string }
-  | { type: "pubblicita"; data: Pick<State, "products" | "sponsoredLinks" | "rotation">; label: string }
-  | { type: "legacy"; data: Partial<State>; label: string };
-
-const str = (v: unknown) => (typeof v === "string" ? v : "");
-
-export function classifyBackup(raw: unknown): SmartRestoreResult {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("Il file scelto non è un formato JSON valido");
-  }
-  const obj = raw as Record<string, unknown>;
-
-  // 1. Pubblicità (file delle sole sponsorizzate)
-  if (obj.tipo === "blogengine-pubblicita" || (Array.isArray(obj.products) && !obj.article)) {
-    const rawProducts = Array.isArray(obj.products) ? obj.products : [];
-    const products: Product[] = rawProducts
-      .filter((p): p is Product => !!p && typeof p === "object")
-      .map((p) => ({
-        id: str(p.id) || crypto.randomUUID(),
-        title: str(p.title),
-        description: str(p.description),
-        badge: str(p.badge),
-        link: str(p.link),
-        image: str(p.image),
-        ...(p.sourceLinkId ? { sourceLinkId: str(p.sourceLinkId) } : {}),
-      }))
-      .filter((p) => p.title || p.link);
-
-    const rawLinks = Array.isArray(obj.sponsoredLinks) ? obj.sponsoredLinks : [];
-    const sponsoredLinks: SponsoredLink[] = rawLinks
-      .filter((l): l is SponsoredLink => !!l && typeof l === "object")
-      .map((l) => ({
-        id: str(l.id) || crypto.randomUUID(),
-        url: str(l.url),
-        ...(l.lastSyncedAt ? { lastSyncedAt: str(l.lastSyncedAt) } : {}),
-        ...(typeof l.cardCount === "number" ? { cardCount: l.cardCount } : {}),
-      }));
-
-    const r = obj.rotation as Rotation | undefined;
-    const rotation: Rotation = {
-      mode: r?.mode === "random" ? "random" : "sequential",
-      intervalSec: typeof r?.intervalSec === "number" ? Math.min(120, Math.max(3, r.intervalSec)) : 8,
-    };
-
-    return {
-      type: "pubblicita",
-      data: { products, sponsoredLinks, rotation },
-      label: `Pubblicità (${products.length} carte)`,
-    };
-  }
-
-  // 2. Solo Blog (tipo esplicito o ha article senza products/analysis)
-  if (obj.tipo === "blogengine-blog" || (obj.article && !obj.products && !obj.analysis)) {
-    const partial: Partial<State> = {
-      article: obj.article as State["article"],
-    };
-    if (typeof obj.nextArticleNumber === "number") partial.nextArticleNumber = obj.nextArticleNumber;
-    if (Array.isArray(obj.topics)) partial.topics = obj.topics as string[];
-    const title = (obj.article as { title?: string })?.title || "Senza titolo";
-    return {
-      type: "blog",
-      data: partial,
-      label: `Articolo Blog ("${title.slice(0, 30)}")`,
-    };
-  }
-
-  // 3. Completo esplicito
-  if (obj.tipo === "blogengine-completo") {
-    return {
-      type: "completo",
-      data: obj as unknown as Partial<State>,
-      label: "Backup Completo (Analisi, Sponsorizzati, Blog e Social)",
-    };
-  }
-
-  // 4. Completo legacy (ha sia article sia products o analysis)
-  if (obj.article && (obj.products || obj.analysis !== undefined)) {
-    return {
-      type: "completo",
-      data: obj as unknown as Partial<State>,
-      label: "Backup Completo (archivio)",
-    };
-  }
-
-  // 5. Fallback generico
-  return {
-    type: "legacy",
-    data: obj as Partial<State>,
-    label: "Backup",
-  };
-}
-
 // -- Pubblicità (carte sponsorizzate): file AAMMGGHHmm-PUBLICITA-<n>carte.json ----------
+// Salva/ricarica solo la sezione Sponsorizzati (carte, link sorgente, rotazione),
+// separatamente dal backup completo e senza toccare la sua cronologia.
+
+export type AdsFile = {
+  tipo: "blogengine-pubblicita";
+  versione: 1;
+  salvatoIl: string;
+  products: Product[];
+  sponsoredLinks: SponsoredLink[];
+  rotation: Rotation;
+};
 
 export function generateAdsFilename(cardCount: number): string {
   const d = new Date();
@@ -423,12 +305,39 @@ export async function saveAds(data: Pick<State, "products" | "sponsoredLinks" | 
   return writeJsonFile(JSON.stringify(file, null, 2), filename, "Pubblicità BlogEngine AI");
 }
 
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Legge e valida un file Pubblicità; lancia un errore comprensibile se il file non è quello giusto. */
 export async function restoreAds(): Promise<Pick<State, "products" | "sponsoredLinks" | "rotation"> | null> {
-  const raw = await restoreBackup();
+  const raw = (await restoreBackup()) as Partial<AdsFile> | null;
   if (raw === null) return null;
-  const classified = classifyBackup(raw);
-  if (classified.type !== "pubblicita") {
+  if (!raw || typeof raw !== "object" || raw.tipo !== "blogengine-pubblicita" || !Array.isArray(raw.products)) {
     throw new Error("Il file scelto non è un file Pubblicità valido (nome atteso: ...-PUBLICITA-...json)");
   }
-  return classified.data;
+  const products: Product[] = raw.products
+    .filter((p): p is Product => !!p && typeof p === "object")
+    .map((p) => ({
+      id: str(p.id) || crypto.randomUUID(),
+      title: str(p.title),
+      description: str(p.description),
+      badge: str(p.badge),
+      link: str(p.link),
+      image: str(p.image),
+      ...(p.sourceLinkId ? { sourceLinkId: str(p.sourceLinkId) } : {}),
+    }))
+    .filter((p) => p.title || p.link);
+  const sponsoredLinks: SponsoredLink[] = (Array.isArray(raw.sponsoredLinks) ? raw.sponsoredLinks : [])
+    .filter((l): l is SponsoredLink => !!l && typeof l === "object")
+    .map((l) => ({
+      id: str(l.id) || crypto.randomUUID(),
+      url: str(l.url),
+      ...(l.lastSyncedAt ? { lastSyncedAt: str(l.lastSyncedAt) } : {}),
+      ...(typeof l.cardCount === "number" ? { cardCount: l.cardCount } : {}),
+    }));
+  const r = raw.rotation;
+  const rotation: Rotation = {
+    mode: r?.mode === "random" ? "random" : "sequential",
+    intervalSec: typeof r?.intervalSec === "number" ? Math.min(120, Math.max(3, r.intervalSec)) : 8,
+  };
+  return { products, sponsoredLinks, rotation };
 }
