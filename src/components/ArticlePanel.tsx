@@ -20,12 +20,12 @@ import { generateArticle, suggestTopics, translateArticle, generateArticleImage 
 import { fetchReferencePage } from "@/lib/reference.functions";
 import { countWords, createBlankArticle, DEFAULT_AUTHOR, slugify, useStore, type Figure } from "@/lib/store";
 import { LANGS, LANG_LABEL, type Lang, type Translation } from "@/lib/blocks";
-import { italianTranslation } from "@/lib/article";
+import { italianTranslation, mergeFigures, shrinkToJpegDataUrl } from "@/lib/article";
 import { ensureFigureMarkers, excerptFromText, syncFigures } from "@/lib/manual";
 import { fileToDataUrl } from "./ProductsPanel";
 import { TopicDialog } from "./TopicDialog";
 
-const PRESETS = [200, 400, 800, 1500, 2500];
+const PRESETS = [900, 1000, 1100, 1200, 1300];
 const stock = (seed: string, w = 1600, h = 900) => `https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}`;
 
 export function ArticlePanel() {
@@ -34,7 +34,6 @@ export function ArticlePanel() {
   const upd = (p: Partial<typeof art>) => set({ article: { ...art, ...p } });
   const [niche, setNiche] = useState("");
   const [ideas, setIdeas] = useState<string[]>([]);
-  const [tone, setTone] = useState("professionale");
   const [figCount, setFigCount] = useState(2);
   const [busy, setBusy] = useState<"" | "ideas" | "gen" | "tr">("");
   const [generatingSlot, setGeneratingSlot] = useState<string | null>(null);
@@ -45,7 +44,6 @@ export function ArticlePanel() {
   const translate = useServerFn(translateArticle);
   const generateImg = useServerFn(generateArticleImage);
 
-  const custom = !PRESETS.includes(art.minWords);
   const words = countWords(art.markdown);
   const isBlank = !art.title && !art.markdown && !art.excerpt && !art.cover && !(art.topics ?? []).length && art.figures.length === 0 && art.author === DEFAULT_AUTHOR;
 
@@ -53,7 +51,6 @@ export function ArticlePanel() {
     upd(createBlankArticle());
     setNiche("");
     setIdeas([]);
-    setTone("professionale");
     setFigCount(2);
     toast.success("Articolo azzerato: pronto per uno nuovo");
   };
@@ -82,7 +79,7 @@ export function ArticlePanel() {
           toast.warning(`Pagina di riferimento non letta: ${e instanceof Error ? e.message : "errore"}. Procedo senza.`);
         }
       }
-      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, tone, referenceText, draftText: art.draftText || "" } });
+      const r = await gen({ data: { title: art.title, minWords: art.minWords, figures: figCount, referenceText, draftText: art.draftText || "" } });
       const n = (r.markdown.match(/\[\[FIGURA:/g) ?? []).length;
       const caps = [...r.markdown.matchAll(/\[\[FIGURA:\s*(.+?)\]\]/g)].map((m) => m[1]);
       const slug = art.slug || slugify(art.title);
@@ -159,12 +156,13 @@ export function ArticlePanel() {
           context: art.excerpt || "",
         },
       });
+      const small = await shrinkToJpegDataUrl(res.url);
       if (isCover) {
-        upd({ cover: res.url });
+        upd({ cover: small });
         toast.success("Copertina generata con AI");
       } else {
         upd({
-          figures: art.figures.map((x) => (x.id === slot ? { ...x, src: res.url } : x)),
+          figures: art.figures.map((x) => (x.id === slot ? { ...x, src: small } : x)),
         });
         toast.success("Figura generata con AI");
       }
@@ -193,7 +191,7 @@ export function ArticlePanel() {
     try {
       for (const lang of ["en", "de", "es"] as Lang[]) {
         const t = JSON.parse((await translate({ data: { lang, payload } })).json) as Translation;
-        next[lang] = { ...t, readingTime: it.readingTime, figures: it.figures };
+        next[lang] = { ...t, readingTime: it.readingTime, figures: mergeFigures(it.figures, t.figures) };
         set({ article: { ...art, translations: { ...next } } });
       }
       toast.success("Traduzioni EN, DE, ES pronte");
@@ -251,6 +249,7 @@ export function ArticlePanel() {
         <div>
           <label htmlFor="title" className="mb-1 block font-bold">Titolo dell'articolo</label>
           <Input id="title" value={art.title} onChange={(e) => upd({ title: e.target.value, slug: slugify(e.target.value) })} className="h-14 border-2 text-xl font-bold" />
+          <p className={`mt-1 font-semibold ${art.title.length > 70 ? "text-destructive" : "text-muted-foreground"}`}>{art.title.length}/70 caratteri{art.title.length > 70 ? " — titolo troppo lungo per lo standard" : ""}</p>
           <p className="mt-1 text-muted-foreground">Cartella: <code>{art.number ? `${art.number}-` : ""}{art.slug || "slug"}/</code></p>
         </div>
         <div>
@@ -258,12 +257,6 @@ export function ArticlePanel() {
           <Input id="author" value={art.author} onChange={(e) => upd({ author: e.target.value })} className="h-12 border-2 text-lg" />
         </div>
 
-        <div>
-          <label htmlFor="tone" className="mb-1 block font-bold">Tono</label>
-          <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="h-12 w-full rounded-md border-2 bg-background px-3 text-lg">
-            {["professionale", "amichevole", "tecnico", "persuasivo", "giornalistico"].map((t) => <option key={t}>{t}</option>)}
-          </select>
-        </div>
         <div className="space-y-2 border-t-2 pt-4">
           <label htmlFor="draft" className="mb-1 block font-bold">Testo già pronto (facoltativo)</label>
           <p className="text-muted-foreground">Incolla qui l'articolo che hai già scritto. Hai due scelte: <strong>«Usa il mio testo così com'è»</strong> lo salva identico, senza AI e senza consumare crediti; oppure «Genera articolo» lo usa come base e lo fa riscrivere e completare dall'AI.</p>
@@ -285,16 +278,14 @@ export function ArticlePanel() {
       </section>
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
-        <h2 className="text-2xl font-extrabold">2. Numero minimo di parole <span className="text-destructive">*</span></h2>
+        <h2 className="text-2xl font-extrabold">2. Lunghezza dell'articolo <span className="text-destructive">*</span></h2>
+        <p className="text-muted-foreground">Minimo di parole scelto: l'AI scrive tra il minimo e 1400 parole (lunghezza consigliata dello standard: 900–1400).</p>
         <div role="radiogroup" aria-label="Parole minime" className="flex gap-1.5 sm:gap-3">
           {PRESETS.map((p) => (
             <button key={p} role="radio" aria-checked={art.minWords === p} onClick={() => upd({ minWords: p })}
-              className={`h-14 min-w-0 flex-1 truncate rounded-lg border-2 px-1 text-sm font-bold sm:px-3 sm:text-lg ${art.minWords === p ? "bg-primary text-primary-foreground" : "bg-background"}`}>{p}{p === 2500 ? "+" : ""}</button>
+              className={`h-14 min-w-0 flex-1 truncate rounded-lg border-2 px-1 text-sm font-bold sm:px-3 sm:text-lg ${art.minWords === p ? "bg-primary text-primary-foreground" : "bg-background"}`}>{p}</button>
           ))}
-          <button role="radio" aria-checked={custom} onClick={() => upd({ minWords: 1000 })}
-            className={`h-14 min-w-0 flex-1 truncate rounded-lg border-2 px-1 text-sm font-bold sm:px-3 sm:text-lg ${custom ? "bg-primary text-primary-foreground" : "bg-background"}`}>Personalizzato</button>
         </div>
-        {custom && <Input type="number" min={200} max={6000} aria-label="Parole minime personalizzate" value={art.minWords} onChange={(e) => upd({ minWords: Number(e.target.value) || 200 })} className="h-12 border-2 text-lg" />}
       </section>
 
       <section className="space-y-4 rounded-xl border-2 bg-card p-4 sm:p-6">
@@ -433,6 +424,7 @@ export function ArticlePanel() {
             <span className={`rounded-md border-2 px-3 py-1 font-bold ${art.manual || words >= art.minWords ? "text-success" : "text-destructive"}`}>{art.manual ? `${words} parole` : `${words} / ${art.minWords}`}</span>
           </div>
           <Textarea aria-label="Estratto" value={art.excerpt} onChange={(e) => upd({ excerpt: e.target.value })} className="border-2 text-lg" />
+          <p className={`font-semibold ${art.excerpt.length > 180 ? "text-destructive" : "text-muted-foreground"}`}>Estratto: {art.excerpt.length}/180 caratteri</p>
           <Textarea aria-label="Corpo articolo in Markdown" value={art.markdown} onChange={(e) => upd({ markdown: e.target.value, figures: syncFigures(e.target.value, art.figures) })} className="min-h-96 border-2 font-mono text-base" />
         </section>
       )}

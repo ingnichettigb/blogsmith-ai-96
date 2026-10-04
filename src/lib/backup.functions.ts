@@ -5,7 +5,7 @@
  * per esportare/importare uno "scatto" (snapshot) dello stato come file .json.
  */
 
-import type { Product, SponsoredLink, Rotation, State } from "./store";
+import { createBlankArticle, withoutVideos, type Article, type Product, type SponsoredLink, type Rotation, type State } from "./store";
 
 export type BackupHistoryEntry = {
   filename: string;
@@ -141,31 +141,66 @@ export const generateBlogBackupFilename = (title: string) => stamp("BLOG", title
 
 export type BackupKind = "completo" | "blog" | "pubblicita";
 
+export const BACKUP_LABEL: Record<BackupKind, string> = {
+  completo: "Backup completo (analisi, sponsorizzati, blog e social)",
+  blog: "Articolo blog (testi, figure, traduzioni e social)",
+  pubblicita: "Carte sponsorizzate e rotazione",
+};
+
+/** Rende completo un articolo letto da un backup (anche vecchio): campi mancanti e "topic" singolo compresi. */
+function normalizeArticle(raw: unknown): Article {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Partial<Article> & { topic?: string };
+  const blank = createBlankArticle();
+  return {
+    ...blank,
+    ...a,
+    topics: Array.isArray(a.topics) ? a.topics.filter((t): t is string => typeof t === "string") : a.topic ? [a.topic] : [],
+    figures: Array.isArray(a.figures) ? a.figures : [],
+    translations: a.translations && typeof a.translations === "object" ? a.translations : {},
+    socialPosts: a.socialPosts && typeof a.socialPosts === "object" ? a.socialPosts : {},
+    author: !a.author || a.author === "team@corporateboostservice.eu" ? blank.author : a.author,
+  };
+}
+
 /** Riconosce il tipo di file e restituisce solo i dati pertinenti da ripristinare. */
-export function classifyBackup(raw: unknown): { kind: BackupKind; data: Partial<State> } {
+export function classifyBackup(raw: unknown): { kind: BackupKind; label: string; data: Partial<State> } {
   if (!raw || typeof raw !== "object") throw new Error("Il file scelto non è un backup valido");
   const r = raw as Record<string, unknown> & Partial<State>;
   const pick = (keys: (keyof State)[]) => {
     const out: Partial<State> = {};
     for (const k of keys) if (r[k] !== undefined) (out as Record<string, unknown>)[k] = r[k];
+    if (out.article) out.article = normalizeArticle(out.article);
+    if (out.topics && !Array.isArray(out.topics)) delete out.topics;
     return out;
   };
   const blogKeys: (keyof State)[] = ["article", "topics", "nextArticleNumber"];
   const adsKeys: (keyof State)[] = ["products", "sponsoredLinks", "rotation"];
-  if (r["tipo"] === "blogengine-pubblicita" || (!r.article && Array.isArray(r.products))) return { kind: "pubblicita", data: pick(adsKeys) };
-  if (r["tipo"] === "blogengine-blog" || (r.article && !r.products && !r.analysis)) return { kind: "blog", data: pick(blogKeys) };
-  return { kind: "completo", data: pick([...blogKeys, ...adsKeys, "analysis"]) };
+  let kind: BackupKind = "completo";
+  let data: Partial<State>;
+  if (r["tipo"] === "blogengine-pubblicita" || (!r.article && Array.isArray(r.products))) {
+    kind = "pubblicita";
+    data = pick(adsKeys);
+  } else if (r["tipo"] === "blogengine-blog" || (r.article && !r.products && !r.analysis)) {
+    kind = "blog";
+    data = pick(blogKeys);
+  } else {
+    data = pick([...blogKeys, ...adsKeys, "analysis"]);
+  }
+  if (Object.keys(data).length === 0) throw new Error("Il file scelto non contiene dati di BlogEngine AI");
+  return { kind, label: BACKUP_LABEL[kind], data };
 }
 
-export async function saveBlogBackup(state: State, filename: string): Promise<SaveResult> {
+export async function saveBlogBackup(state: Pick<State, "article" | "topics" | "nextArticleNumber">, filename: string): Promise<SaveResult> {
+  // I video allegati ai social (data URL anche da decine di MB) non entrano nei backup: si ricaricano dal dispositivo.
+  const { article } = withoutVideos({ article: state.article });
   return saveBackup(
-    { tipo: "blogengine-blog", versione: 1, salvatoIl: new Date().toISOString(), article: state.article, topics: state.topics, nextArticleNumber: state.nextArticleNumber },
+    { tipo: "blogengine-blog", versione: 1, salvatoIl: new Date().toISOString(), article, topics: state.topics, nextArticleNumber: state.nextArticleNumber },
     filename,
   );
 }
 
 export async function saveCompleteBackup(state: State, filename: string): Promise<SaveResult> {
-  return saveBackup({ tipo: "blogengine-completo", versione: 1, salvatoIl: new Date().toISOString(), ...state }, filename);
+  return saveBackup({ tipo: "blogengine-completo", versione: 1, salvatoIl: new Date().toISOString(), ...withoutVideos(state) }, filename);
 }
 
 // -- Salvataggio: "Salva con nome" se il browser lo supporta, altrimenti download --

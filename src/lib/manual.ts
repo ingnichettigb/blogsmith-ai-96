@@ -5,14 +5,16 @@ import type { Figure } from "./store";
  * SENZA riscriverlo. L'unica cosa che può essere aggiunta sono i segnaposto [[FIGURA: ...]].
  */
 
-const FIG_GLOBAL = /\[\[FIGURA:\s*(.+?)\]\]/g;
+// Un richiamo a figura può essere un segnaposto [[FIGURA: ...]] oppure, dopo l'export o la
+// modifica rapida in Anteprima, un'immagine markdown ![didascalia](figura-N.jpg).
+const FIG_GLOBAL = /\[\[FIGURA:\s*(.+?)\]\]|!\[([^\]]*)\]\(figura-\d+\.[a-z0-9]+\)/gi;
 
-/** Didascalie dei segnaposto [[FIGURA: ...]] presenti nel testo, nell'ordine. */
-export const figureCaptions = (md: string): string[] => [...md.matchAll(FIG_GLOBAL)].map((m) => (m[1] ?? "").trim());
+/** Didascalie dei richiami a figura presenti nel testo, nell'ordine. */
+export const figureCaptions = (md: string): string[] => [...md.matchAll(FIG_GLOBAL)].map((m) => (m[1] ?? m[2] ?? "").trim());
 
 const isPlainParagraph = (chunk: string) => {
   const t = chunk.trim();
-  return !!t && !/^(#|>|[-*]\s|\d+\.\s|\[\[FIGURA:)/.test(t);
+  return !!t && !/^(#|>|[-*]\s|\d+\.\s|\[\[FIGURA:|!\[)/.test(t);
 };
 
 /**
