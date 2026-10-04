@@ -175,7 +175,6 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
         },
       });
       updateVideoPromptText(platform, res.prompt);
-      setShowVideoPromptBox((prev) => ({ ...prev, [platform]: true }));
       toast.success("Prompt video AI generato in inglese!");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore generazione prompt video");
