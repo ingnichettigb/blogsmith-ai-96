@@ -16,7 +16,8 @@ import {
   Image as ImageIcon,
   Film,
   Clapperboard,
-  Wand2,
+  ArrowDown,
+  ArrowUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -39,12 +40,13 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
   const [copiedPlatform, setCopiedPlatform] = useState<Platform | "">("");
   const [copiedPromptPlatform, setCopiedPromptPlatform] = useState<Platform | "">("");
 
-  // Stato per mostrare o nascondere il box del prompt video per ciascun canale
-  const [showVideoPromptBox, setShowVideoPromptBox] = useState<Record<Platform, boolean>>({
-    linkedin: false,
-    facebook: false,
-    telegram: false,
-  });
+  // Piattaforma attiva nella scheda Prompt Video in fondo alla pagina
+  const [promptPlatform, setPromptPlatform] = useState<Platform>("linkedin");
+  const promptSectionRef = useRef<HTMLDivElement>(null);
+  const openPromptSection = (platform: Platform) => {
+    setPromptPlatform(platform);
+    setTimeout(() => promptSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
 
   // Riferimenti per input file video
   const videoInputRefs = {
@@ -173,7 +175,6 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
         },
       });
       updateVideoPromptText(platform, res.prompt);
-      setShowVideoPromptBox((prev) => ({ ...prev, [platform]: true }));
       toast.success("Prompt video AI generato in inglese!");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore generazione prompt video");
@@ -327,7 +328,6 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
             posts[`${card.id}Image` as keyof SocialPosts] || availableImages[0]?.src || "";
           const currentVideoPrompt =
             posts[`${card.id}VideoPrompt` as keyof SocialPosts] || "";
-          const isPromptBoxOpen = showVideoPromptBox[card.id] || Boolean(currentVideoPrompt);
 
           return (
             <div key={card.id} className="flex flex-col rounded-xl border-2 bg-card p-5">
@@ -434,20 +434,18 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
                       </div>
                     )}
 
-                    {/* Azioni: Scarica Immagine + Carica Video + Prompt Video */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-1 sm:flex sm:items-center">
+                    {/* Azioni media */}
+                    <div className="grid grid-cols-2 gap-2 pt-1">
                       {assignedImage && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-2 text-xs font-bold"
+                          className="h-9 min-w-0 border-2 px-2 text-xs font-bold"
                           onClick={() => downloadFile(assignedImage, `immagine-${card.id}.jpg`)}
                         >
-                          <Download className="size-3.5" /> Scarica foto
+                          <Download className="size-3.5 shrink-0" /> <span className="truncate">Scarica foto</span>
                         </Button>
                       )}
-
-                      {/* Tasto Carica Video */}
                       <input
                         type="file"
                         ref={videoInputRefs[card.id]}
@@ -458,116 +456,22 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 flex-1 border-2 text-xs font-bold hover:bg-primary/10"
+                        className={`h-9 min-w-0 border-2 px-2 text-xs font-bold ${assignedImage ? "" : "col-span-2"}`}
                         title="Allega un video pronto (MP4, WebM)"
                         onClick={() => videoInputRefs[card.id].current?.click()}
                       >
-                        <Video className="size-3.5 text-primary" /> Carica video
+                        <Video className="size-3.5 shrink-0 text-primary" /> <span className="truncate">Carica video</span>
                       </Button>
-
-                      {/* Tasto per aprire o generare il prompt video */}
                       <Button
                         variant="outline"
                         size="sm"
-                        className={`h-8 flex-1 border-2 text-xs font-bold ${
-                          isPromptBoxOpen ? "bg-secondary text-primary" : ""
-                        }`}
-                        title="Genera un prompt da incollare in un generatore video AI (Runway, Kling, Sora)"
-                        onClick={() =>
-                          setShowVideoPromptBox((prev) => ({
-                            ...prev,
-                            [card.id]: !prev[card.id],
-                          }))
-                        }
+                        className={`col-span-2 h-9 border-2 text-xs font-bold ${currentVideoPrompt ? "text-primary" : ""}`}
+                        title="Apri la scheda prompt video in fondo alla pagina"
+                        onClick={() => openPromptSection(card.id)}
                       >
-                        <Clapperboard className="size-3.5 text-amber-500" /> Prompt video
+                        <Clapperboard className="size-3.5 shrink-0" /> Prompt video AI <ArrowDown className="size-3.5 shrink-0" />
                       </Button>
                     </div>
-                  </div>
-                )}
-
-                {/* BOX DEDICATO: Prompt per generatore video AI */}
-                {isPromptBoxOpen && (
-                  <div className="mt-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400">
-                        <Wand2 className="size-3.5" /> Prompt Video AI (Runway, Kling, Sora)
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setShowVideoPromptBox((prev) => ({
-                            ...prev,
-                            [card.id]: false,
-                          }))
-                        }
-                      >
-                        Chiudi
-                      </Button>
-                    </div>
-
-                    <p className="text-[11px] leading-tight text-muted-foreground">
-                      Genera una descrizione cinematografica in inglese pronta da copiare e incollare nell'AI video.
-                    </p>
-
-                    <Button
-                      size="sm"
-                      className="h-8 w-full border-2 font-bold"
-                      variant="outline"
-                      disabled={loadingVideoPrompt !== ""}
-                      onClick={() => void doGenerateVideoPrompt(card.id)}
-                    >
-                      {isBusyPrompt ? (
-                        <>
-                          <Loader2 className="size-3.5 animate-spin" /> Generazione prompt video...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="size-3.5 text-amber-500" />{" "}
-                          {currentVideoPrompt ? "Rigenera prompt video" : "Crea prompt video AI"}
-                        </>
-                      )}
-                    </Button>
-
-                    <Textarea
-                      value={currentVideoPrompt}
-                      onChange={(e) => updateVideoPromptText(card.id, e.target.value)}
-                      placeholder="Il prompt video generato in inglese comparirà qui. Potrai modificarlo liberamente prima di copiarlo..."
-                      rows={4}
-                      className="w-full resize-y border-2 font-mono text-xs leading-relaxed"
-                    />
-
-                    {currentVideoPrompt.trim() && (
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <Button
-                          size="sm"
-                          className="h-8 flex-1 border-2 font-bold"
-                          variant={isPromptCopied ? "secondary" : "default"}
-                          onClick={() => void doCopyVideoPrompt(card.id, currentVideoPrompt)}
-                        >
-                          {isPromptCopied ? (
-                            <>
-                              <Check className="size-3.5 text-emerald-500" /> Prompt copiato!
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="size-3.5" /> Copia prompt video
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-2 text-destructive hover:bg-destructive/10"
-                          title="Cancella prompt"
-                          onClick={() => updateVideoPromptText(card.id, "")}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -644,6 +548,84 @@ export function SocialPanel({ onNavigate }: SocialPanelProps) {
           );
         })}
       </div>
+
+      {/* SCHEDA PROMPT VIDEO AI — in fondo, a tutta larghezza */}
+      {(() => {
+        const p = promptPlatform;
+        const pName = cards.find((c) => c.id === p)?.name ?? "";
+        const promptText = (posts[`${p}VideoPrompt` as keyof SocialPosts] as string) || "";
+        const busy = loadingVideoPrompt === p;
+        const copied = copiedPromptPlatform === p;
+        return (
+          <div ref={promptSectionRef} className="scroll-mt-4 space-y-4 rounded-xl border-2 border-primary bg-card p-5 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2">
+                <Clapperboard className="size-6 shrink-0 text-primary" />
+                <h2 className="text-xl font-black sm:text-2xl">Prompt Video AI</h2>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {cards.map((c) => (
+                  <Button
+                    key={c.id}
+                    size="sm"
+                    variant={p === c.id ? "default" : "outline"}
+                    className="h-9 border-2 font-bold"
+                    onClick={() => setPromptPlatform(c.id)}
+                  >
+                    <c.icon className="size-4" /> {c.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Descrizione cinematografica in inglese per {pName}, da incollare in Runway, Kling, Sora o Luma. Puoi modificarla liberamente.
+            </p>
+            <Button
+              className="h-11 w-full border-2 font-bold sm:w-auto"
+              disabled={loadingVideoPrompt !== ""}
+              onClick={() => void doGenerateVideoPrompt(p)}
+            >
+              {busy ? (
+                <><Loader2 className="size-4 animate-spin" /> Generazione prompt...</>
+              ) : (
+                <><Sparkles className="size-4" /> {promptText ? `Rigenera prompt ${pName}` : `Crea prompt video ${pName}`}</>
+              )}
+            </Button>
+            <Textarea
+              value={promptText}
+              onChange={(e) => updateVideoPromptText(p, e.target.value)}
+              placeholder="Il prompt video comparirà qui. Potrai modificarlo prima di copiarlo..."
+              rows={10}
+              className="w-full resize-y border-2 text-base leading-relaxed"
+            />
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+              <Button
+                className="h-10 border-2 font-bold"
+                variant={copied ? "secondary" : "default"}
+                disabled={!promptText.trim()}
+                onClick={() => void doCopyVideoPrompt(p, promptText)}
+              >
+                {copied ? <><Check className="size-4" /> Prompt copiato!</> : <><Copy className="size-4" /> Copia prompt</>}
+              </Button>
+              <Button
+                variant="outline"
+                className="h-10 border-2 font-bold text-destructive"
+                disabled={!promptText.trim()}
+                onClick={() => updateVideoPromptText(p, "")}
+              >
+                <Trash2 className="size-4" /> Svuota
+              </Button>
+              <Button
+                variant="outline"
+                className="h-10 border-2 font-bold"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              >
+                <ArrowUp className="size-4" /> Torna ai post
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

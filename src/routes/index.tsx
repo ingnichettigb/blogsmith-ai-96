@@ -141,9 +141,9 @@ function SaveRestoreControls() {
             <>
               <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
                 {history.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-secondary">
+                  <li key={entry.savedAt} className="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-secondary">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{entry.articleTitle || "Senza titolo"}</p>
+                      <p className="truncate font-semibold">{entry.filename || "Senza titolo"}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatHistoryDate(entry.savedAt)} {entry.hasSnapshot ? "• copia locale" : ""}
                       </p>
@@ -167,7 +167,7 @@ function SaveRestoreControls() {
                         className="h-8 px-2 text-destructive hover:bg-destructive/10"
                         title="Elimina dall'elenco"
                         onClick={() => {
-                          removeBackupHistoryEntry(entry.id);
+                          removeBackupHistoryEntry(entry.savedAt);
                           setHistory(getBackupHistory());
                         }}
                       >
