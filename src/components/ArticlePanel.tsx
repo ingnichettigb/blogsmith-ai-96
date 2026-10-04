@@ -178,7 +178,7 @@ export function ArticlePanel() {
   /** Svuota tutte le immagini (copertina e figure) lasciandole vuote */
   const clearAllImages = () => {
     upd({
-      cover: undefined,
+      cover: "",
       figures: art.figures.map((f) => ({ ...f, src: "" })),
     });
     toast.info("Tutte le immagini sono state svuotate");
@@ -343,7 +343,7 @@ export function ArticlePanel() {
                 variant="outline"
                 size="lg"
                 className="h-12 border-2 text-destructive hover:bg-destructive/10 font-semibold"
-                onClick={() => { upd({ cover: undefined }); toast.info("Copertina rimossa"); }}
+                onClick={() => { upd({ cover: "" }); toast.info("Copertina rimossa"); }}
               >
                 <Trash2 className="size-5" /> Rimuovi
               </Button>
