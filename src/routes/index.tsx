@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Share2, Save, Upload, History, Trash2, ArchiveRestore } from "lucide-react";
+import { Moon, Sun, ScanSearch, Megaphone, PenLine, Eye, Share2, Save, Upload, History, Trash2, ArchiveRestore, FolderArchive } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,7 +20,19 @@ import { ArticlePanel } from "@/components/ArticlePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { SocialPanel } from "@/components/SocialPanel";
 import { useStore, type State } from "@/lib/store";
-import { generateBackupFilename, saveBackup, restoreBackup, restoreFromHistory, getBackupHistory, removeBackupHistoryEntry, clearBackupHistory, type BackupHistoryEntry } from "@/lib/backup.functions";
+import {
+  generateCompleteBackupFilename,
+  generateBlogBackupFilename,
+  saveCompleteBackup,
+  saveBlogBackup,
+  restoreBackup,
+  restoreFromHistory,
+  classifyBackup,
+  getBackupHistory,
+  removeBackupHistoryEntry,
+  clearBackupHistory,
+  type BackupHistoryEntry,
+} from "@/lib/backup.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -40,7 +52,7 @@ function formatHistoryDate(iso: string) {
 
 function SaveRestoreControls() {
   const { state, set } = useStore();
-  const [busy, setBusy] = useState<"" | "save" | "restore">("");
+  const [busy, setBusy] = useState<"" | "saveAll" | "saveBlog" | "restore">("");
   const [history, setHistory] = useState<BackupHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pending, setPending] = useState<BackupHistoryEntry | null>(null);
@@ -49,24 +61,43 @@ function SaveRestoreControls() {
     setHistory(getBackupHistory());
   }, []);
 
-  const doSave = async () => {
-    setBusy("save");
+  const ensureArticleNumber = () => {
+    let current = state;
+    if (!current.article.number) {
+      const number = String(current.nextArticleNumber).padStart(3, "0");
+      current = { ...current, article: { ...current.article, number }, nextArticleNumber: current.nextArticleNumber + 1 };
+      set({ article: current.article, nextArticleNumber: current.nextArticleNumber });
+    }
+    return current;
+  };
+
+  const doSaveAll = async () => {
+    setBusy("saveAll");
     try {
-      // Il numero progressivo scatta al primo salvataggio di un articolo e poi resta fisso
-      // (finché non si fa "Azzera tutto" per iniziarne uno nuovo).
-      let current = state;
-      if (!current.article.number) {
-        const number = String(current.nextArticleNumber).padStart(3, "0");
-        current = { ...current, article: { ...current.article, number }, nextArticleNumber: current.nextArticleNumber + 1 };
-        set({ article: current.article, nextArticleNumber: current.nextArticleNumber });
-      }
-      const filename = generateBackupFilename(current.article.title);
-      const result = await saveBackup(current, filename);
-      if (result === "saved") toast.success(`Salvato come ${filename}`);
-      if (result === "downloaded") toast.success(`Scaricato ${filename}`);
+      const current = ensureArticleNumber();
+      const filename = generateCompleteBackupFilename(current.article.title);
+      const result = await saveCompleteBackup(current, filename);
+      if (result === "saved") toast.success(`Backup completo salvato come ${filename}`);
+      if (result === "downloaded") toast.success(`Backup completo scaricato: ${filename}`);
       if (result !== "cancelled") setHistory(getBackupHistory());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Errore durante il salvataggio");
+      toast.error(e instanceof Error ? e.message : "Errore durante il salvataggio completo");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const doSaveBlog = async () => {
+    setBusy("saveBlog");
+    try {
+      const current = ensureArticleNumber();
+      const filename = generateBlogBackupFilename(current.article.title);
+      const result = await saveBlogBackup({ article: current.article, nextArticleNumber: current.nextArticleNumber, topics: current.topics }, filename);
+      if (result === "saved") toast.success(`Blog salvato come ${filename}`);
+      if (result === "downloaded") toast.success(`Blog scaricato: ${filename}`);
+      if (result !== "cancelled") setHistory(getBackupHistory());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore durante il salvataggio del blog");
     } finally {
       setBusy("");
     }
@@ -75,10 +106,19 @@ function SaveRestoreControls() {
   const doRestore = async () => {
     setBusy("restore");
     try {
-      const data = await restoreBackup();
-      if (!data || typeof data !== "object") return;
-      set(data as Partial<State>);
-      toast.success("Lavoro ripristinato");
+      const raw = await restoreBackup();
+      if (!raw || typeof raw !== "object") return;
+      const parsed = classifyBackup(raw);
+      set(parsed.data);
+      if (parsed.type === "completo") {
+        toast.success("Ripristinato Backup Completo (Analisi, Sponsorizzati, Blog e Social)");
+      } else if (parsed.type === "blog") {
+        toast.success("Ripristinato Articolo Blog (testi, figure, traduzioni e social)");
+      } else if (parsed.type === "pubblicita") {
+        toast.success("Ripristinate Carte Sponsorizzate e rotazione");
+      } else {
+        toast.success("Dati ripristinati");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "File di backup non valido");
     } finally {
@@ -91,8 +131,9 @@ function SaveRestoreControls() {
     try {
       const r = await restoreFromHistory(entry);
       if (!r || typeof r.data !== "object" || r.data === null) return;
-      set(r.data as Partial<State>);
-      toast.success(`Ripristinato: ${entry.filename}`);
+      const parsed = classifyBackup(r.data);
+      set(parsed.data);
+      toast.success(`Ripristinato: ${parsed.label}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Il file scelto non è un backup valido");
     } finally {
@@ -102,104 +143,149 @@ function SaveRestoreControls() {
 
   return (
     <>
-    <div className="flex items-center gap-2">
-      <Button variant="outline" className="h-11 min-w-11 border-2" onClick={doSave} disabled={busy !== ""} aria-label="Salva tutto il lavoro">
-        <Save className={busy === "save" ? "animate-pulse" : ""} />
-        <span className="hidden sm:inline">Salva</span>
-      </Button>
-      <Button variant="outline" className="h-11 min-w-11 border-2" onClick={doRestore} disabled={busy !== ""} aria-label="Ripristina da backup">
-        <Upload className={busy === "restore" ? "animate-pulse" : ""} />
-        <span className="hidden sm:inline">Ripristina</span>
-      </Button>
-      <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="h-11 min-w-11 border-2" aria-label="Cronologia salvataggi">
-            <History />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-96">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-sm font-bold">Salvataggi recenti</p>
-            {history.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => {
-                  clearBackupHistory();
-                  setHistory([]);
-                  toast.success("Cronologia svuotata");
-                }}
-              >
-                Svuota elenco
-              </Button>
+      <div className="flex items-center gap-1 sm:gap-2">
+        <Button
+          variant="outline"
+          className="h-11 border-2 px-2.5 sm:px-3"
+          onClick={doSaveAll}
+          disabled={busy !== ""}
+          title="Salva tutto insieme (Analisi + Sponsorizzati + Blog + Social)"
+          aria-label="Salva tutto insieme"
+        >
+          <FolderArchive className={`size-4 ${busy === "saveAll" ? "animate-pulse" : ""}`} />
+          <span className="hidden sm:inline">Salva tutto</span>
+        </Button>
+
+        <Button
+          variant="outline"
+          className="h-11 border-2 px-2.5 sm:px-3"
+          onClick={doSaveBlog}
+          disabled={busy !== ""}
+          title="Salva solo Articolo Blog e Social"
+          aria-label="Salva solo Blog"
+        >
+          <Save className={`size-4 ${busy === "saveBlog" ? "animate-pulse" : ""}`} />
+          <span className="hidden sm:inline">Salva Blog</span>
+        </Button>
+
+        <Button
+          variant="outline"
+          className="h-11 border-2 px-2.5 sm:px-3"
+          onClick={doRestore}
+          disabled={busy !== ""}
+          title="Ripristina file (riconosce in automatico Completo, Blog o Pubblicità)"
+          aria-label="Ripristina da backup"
+        >
+          <Upload className={`size-4 ${busy === "restore" ? "animate-pulse" : ""}`} />
+          <span className="hidden md:inline">Ripristina</span>
+        </Button>
+
+        <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="h-11 min-w-11 border-2" aria-label="Cronologia salvataggi" title="Cronologia salvataggi recenti">
+              <History />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-96">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-bold">Salvataggi recenti</p>
+              {history.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => {
+                    clearBackupHistory();
+                    setHistory([]);
+                    toast.success("Cronologia svuotata");
+                  }}
+                >
+                  Svuota elenco
+                </Button>
+              )}
+            </div>
+            {history.length === 0 ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">Nessun salvataggio recente memorizzato in questo browser.</p>
+            ) : (
+              <>
+                <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
+                  {history.map((entry) => (
+                    <li key={entry.savedAt} className="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-secondary">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="truncate font-semibold">{entry.filename || "Senza titolo"}</p>
+                          {entry.filename.includes("COMPLETO") ? (
+                            <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-bold text-primary uppercase">Tutto</span>
+                          ) : entry.filename.includes("PUBLICITA") ? (
+                            <span className="shrink-0 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">Pubblicità</span>
+                          ) : (
+                            <span className="shrink-0 rounded bg-secondary px-1 py-0.5 text-[10px] font-bold text-muted-foreground uppercase">Blog</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {formatHistoryDate(entry.savedAt)} {entry.hasSnapshot ? "• copia locale" : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2"
+                          title="Ripristina questo salvataggio"
+                          onClick={() => {
+                            setHistoryOpen(false);
+                            setPending(entry);
+                          }}
+                        >
+                          <ArchiveRestore className="size-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                          title="Elimina dall'elenco"
+                          onClick={() => {
+                            removeBackupHistoryEntry(entry.savedAt);
+                            setHistory(getBackupHistory());
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Il pulsante di ripristino carica il contenuto del file. Eliminare una voce la rimuove dall'elenco e dalla memoria locale, ma non cancella il file sul tuo computer.
+                </p>
+              </>
             )}
-          </div>
-          {history.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">Nessun salvataggio recente memorizzato in questo browser.</p>
-          ) : (
-            <>
-              <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
-                {history.map((entry) => (
-                  <li key={entry.savedAt} className="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-secondary">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{entry.filename || "Senza titolo"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatHistoryDate(entry.savedAt)} {entry.hasSnapshot ? "• copia locale" : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-2"
-                        title="Ripristina questo salvataggio"
-                        onClick={() => {
-                          setHistoryOpen(false);
-                          setPending(entry);
-                        }}
-                      >
-                        <ArchiveRestore className="size-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-2 text-destructive hover:bg-destructive/10"
-                        title="Elimina dall'elenco"
-                        onClick={() => {
-                          removeBackupHistoryEntry(entry.savedAt);
-                          setHistory(getBackupHistory());
-                        }}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-muted-foreground">Il pulsante di ripristino sostituisce il lavoro attuale. Eliminare una voce la toglie dall'elenco e cancella la sua copia nel browser, ma non il file già salvato sul tuo dispositivo.</p>
-            </>
-          )}
-        </PopoverContent>
-      </Popover>
-    </div>
-    <AlertDialog open={!!pending} onOpenChange={(o) => { if (!o) setPending(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Ripristinare questo salvataggio?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {pending?.filename}
-            <br />
-            Il lavoro attuale (analisi, sponsorizzati, articolo) verrà sostituito da questo salvataggio. Se non hai salvato le modifiche recenti, andranno perse.
-            {pending && !pending.hasSnapshot && " Questo salvataggio è precedente alla copia nel browser: dopo aver confermato dovrai scegliere il file .json con questo nome dal tuo dispositivo."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Annulla</AlertDialogCancel>
-          <AlertDialogAction onClick={() => { if (pending) void doRestoreEntry(pending); }}>Ripristina</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <AlertDialog open={!!pending} onOpenChange={(o) => { if (!o) setPending(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ripristinare questo salvataggio?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold">{pending?.filename}</span>
+              <br />
+              {pending?.filename.includes("COMPLETO")
+                ? "Questo backup completo sostituirà l'analisi, le sponsorizzate e l'articolo con i social attuali."
+                : pending?.filename.includes("PUBLICITA")
+                ? "Questo file sostituirà solo le carte sponsorizzate e la rotazione, lasciando invariato l'articolo del blog."
+                : "Questo file sostituirà solo l'articolo del blog e i social collegati, preservando l'analisi del sito e le sponsorizzate correnti."}
+              <br />
+              {pending && !pending.hasSnapshot && " Questo salvataggio è precedente alla copia nel browser: dopo aver confermato dovrai scegliere il file .json con questo nome dal tuo dispositivo."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (pending) void doRestoreEntry(pending); }}>Ripristina</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
