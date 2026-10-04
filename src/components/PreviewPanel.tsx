@@ -111,16 +111,32 @@ export function PreviewPanel() {
     const dir = zip.folder(dirName)!;
     dir.file("article.json", JSON.stringify(doc, null, 2));
     const missing: string[] = [];
+    const heavy: string[] = [];
+    const MAX_BYTES = 300 * 1024;
     if (a.cover) {
       const c = await toJpeg(a.cover, 1600);
-      if (c) dir.file(COVER_FILE, c); else missing.push(COVER_FILE);
+      if (c) {
+        dir.file(COVER_FILE, c);
+        if (c.size > MAX_BYTES) heavy.push(COVER_FILE);
+      } else missing.push(COVER_FILE);
     } else missing.push(COVER_FILE);
     for (let i = 0; i < a.figures.length; i++) {
       const f = a.figures[i]!;
       const b = f.src ? await toJpeg(f.src, 1280) : null;
-      if (b) dir.file(figureFile(i + 1), b); else missing.push(figureFile(i + 1));
+      if (b) {
+        dir.file(figureFile(i + 1), b);
+        if (b.size > MAX_BYTES) heavy.push(figureFile(i + 1));
+      } else missing.push(figureFile(i + 1));
     }
-    if (missing.length) toast.warning(`Mancano ${missing.length} immagini: ${missing.join(", ")}`);
+    if (missing.length) {
+      // Il pacchetto deve contenere file reali: se manca un'immagine non si scarica uno ZIP incompleto.
+      toast.error(
+        `Export annullato: immagini mancanti o non scaricabili (${missing.join(", ")}). Carica l'immagine dal dispositivo oppure sostituiscila e riprova.`,
+        { duration: 12000 },
+      );
+      return;
+    }
+    if (heavy.length) toast.warning(`Immagini oltre 300 KB nonostante la compressione: ${heavy.join(", ")}`, { duration: 10000 });
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement("a"), { href: url, download: `${dirName}.zip` }).click();

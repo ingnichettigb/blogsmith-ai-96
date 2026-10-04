@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import type { SiteAnalysis } from "./analyze.functions";
 import type { Lang, Translation } from "./blocks";
 
@@ -71,7 +72,8 @@ export type Article = {
   socialPosts?: SocialPosts;
 };
 
-export const DEFAULT_AUTHOR = "team@corporateboostservice.eu";
+export const DEFAULT_AUTHOR = "Nichetti Gian Battista";
+const LEGACY_AUTHOR = "team@corporateboostservice.eu";
 
 export type Rotation = { mode: "random" | "sequential"; intervalSec: number };
 
@@ -89,7 +91,7 @@ export const slugify = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 
 export const countWords = (s: string) =>
-  s.replace(/\[\[FIGURA:[^\]]*\]\]/g, " ").replace(/[#*_>`\-]/g, " ").split(/\s+/).filter((w) => /\p{L}|\d/u.test(w)).length;
+  s.replace(/\[\[FIGURA:[^\]]*\]\]/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/[#*_>`\-]/g, " ").split(/\s+/).filter((w) => /\p{L}|\d/u.test(w)).length;
 
 /** Articolo vuoto ("foglio bianco"): usato sia per lo stato iniziale sia dal pulsante "Azzera tutto". */
 export function createBlankArticle(): Article {
@@ -102,7 +104,7 @@ export function createBlankArticle(): Article {
     markdown: "",
     cover: "",
     figures: [],
-    minWords: 1500,
+    minWords: 900,
     date: new Date().toISOString().slice(0, 10),
     author: DEFAULT_AUTHOR,
     referenceUrl: "",
@@ -137,6 +139,15 @@ const initial: State = {
   article: createBlankArticle(),
 };
 
+let quotaWarned = false;
+
+/** I video allegati ai social sono troppo grandi per il salvataggio nel browser: restano solo finché la pagina è aperta. */
+export function withoutVideos<T extends { article: Article }>(state: T): T {
+  const sp = { ...(state.article.socialPosts ?? {}) } as Record<string, unknown>;
+  for (const k of Object.keys(sp)) if (/Video$/.test(k)) delete sp[k];
+  return { ...state, article: { ...state.article, socialPosts: sp as SocialPosts } };
+}
+
 const Ctx = createContext<{ state: State; set: (p: Partial<State>) => void } | null>(null);
 const KEY = "blogengine-state-v1";
 
@@ -152,7 +163,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Compatibilità con i salvataggi precedenti: singolo "topic" -> elenco "topics".
         const topics = Array.isArray(saved.topics) ? saved.topics : saved.topic ? [saved.topic] : [];
         const socialPosts = saved.socialPosts ?? {};
-        setState({ ...initial, ...p, article: { ...initial.article, ...saved, topics, socialPosts } });
+        const author = !saved.author || saved.author === LEGACY_AUTHOR ? DEFAULT_AUTHOR : saved.author;
+        const minWords = typeof saved.minWords === "number" ? Math.min(1300, Math.max(900, saved.minWords)) : initial.article.minWords;
+        setState({ ...initial, ...p, article: { ...initial.article, ...saved, author, minWords, topics, socialPosts } });
       }
     } catch {
       /* ignore */
@@ -162,9 +175,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loaded) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(KEY, JSON.stringify(withoutVideos(state)));
+      quotaWarned = false;
     } catch {
-      /* quota: large images */
+      // Spazio del browser pieno (immagini grandi): avvisa una sola volta, il lavoro non è più salvato in automatico.
+      if (!quotaWarned) {
+        quotaWarned = true;
+        toast.warning("Salvataggio automatico non riuscito (memoria del browser piena). Usa «Salva Blog» per non perdere il lavoro.", { duration: 10000 });
+      }
     }
   }, [state, loaded]);
   return <Ctx.Provider value={{ state, set: (p) => setState((s) => ({ ...s, ...p })) }}>{children}</Ctx.Provider>;

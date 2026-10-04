@@ -110,15 +110,7 @@ function SaveRestoreControls() {
       if (!raw || typeof raw !== "object") return;
       const parsed = classifyBackup(raw);
       set(parsed.data);
-      if (parsed.type === "completo") {
-        toast.success("Ripristinato Backup Completo (Analisi, Sponsorizzati, Blog e Social)");
-      } else if (parsed.type === "blog") {
-        toast.success("Ripristinato Articolo Blog (testi, figure, traduzioni e social)");
-      } else if (parsed.type === "pubblicita") {
-        toast.success("Ripristinate Carte Sponsorizzate e rotazione");
-      } else {
-        toast.success("Dati ripristinati");
-      }
+      toast.success(`Ripristinato: ${parsed.label}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "File di backup non valido");
     } finally {
